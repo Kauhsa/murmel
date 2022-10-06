@@ -25,12 +25,12 @@ impl Player {
                 start = Some(Instant::now())
             }
 
-            debug!("Event played: {:?}", event);
+            debug!("Event: {:?}", event);
 
             if let Event::Break { duration } = event {
                 should_have_elapsed += Duration::from_millis(duration.into());
                 let sleep_duration = should_have_elapsed - start.unwrap().elapsed();
-                debug!("Sleeping {:?}", sleep_duration);
+                debug!("Break, sleeping {:?}", sleep_duration);
                 spin_sleep::sleep(sleep_duration);
             }
         }
