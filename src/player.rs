@@ -32,7 +32,7 @@ impl Player {
         }
     }
 
-    pub fn play(&mut self) -> anyhow::Result<()> {
+    pub fn start_event_processing_loop(&mut self) -> anyhow::Result<()> {
         loop {
             // TODO: ui_receiver should have a priority - I don't think it does now.
             select! {

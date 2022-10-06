@@ -73,7 +73,7 @@ fn main() -> anyhow::Result<()> {
                 receiver_for_player,
             );
 
-            player.play().unwrap();
+            player.start_event_processing_loop().unwrap();
 
             debug!("Player thread exited");
         })?;
