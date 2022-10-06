@@ -4,17 +4,25 @@ use std::error::Error;
 use std::thread::sleep;
 use std::time::Duration;
 
+use deno_core::{JsRuntime, RuntimeOptions};
 use midir::os::unix::VirtualOutput;
 use midir::MidiOutput;
 
-fn main() {
-    match run() {
-        Ok(_) => (),
-        Err(err) => println!("Error: {}", err),
-    }
+const SCRIPT: &str = r#"
+Deno.core.print("Hello world!\n");
+"#;
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let mut runtime = JsRuntime::new(RuntimeOptions {
+        ..Default::default()
+    });
+
+    runtime.execute_script("<run>", SCRIPT)?;
+
+    Ok(())
 }
 
-fn run() -> Result<(), Box<dyn Error>> {
+fn run_midi() -> Result<(), Box<dyn Error>> {
     let midi_out = MidiOutput::new("My Test Output")?;
 
     let mut conn_out = midi_out.create_virtual("Virtual port")?;
