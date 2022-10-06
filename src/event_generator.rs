@@ -1,10 +1,10 @@
-use crate::note::Note;
+use crate::event::Event;
 
 use std::{error::Error, sync::mpsc::Sender};
 
 use deno_core::{op, Extension, JsRuntime, OpState, RuntimeOptions};
 
-pub struct NoteGenerator {
+pub struct EventGenerator {
     runtime: JsRuntime,
 }
 
@@ -12,8 +12,11 @@ const INIT_SCRIPT: &str = r#"
     const generator = function* () {
         let i = 0;
 
-        while (i < 5) {
-            yield [i];
+        while (true) {
+            yield { type: "NoteOn", note: i };
+            yield { type: "Break", duration: 100 };
+            yield { type: "NoteOff", note: i };
+            yield { type: "Break", duration: 100 };
             i += 1;
         }
     }
@@ -33,8 +36,8 @@ const ITERATE: &str = r#"
     globalThis.next()
 "#;
 
-impl NoteGenerator {
-    pub fn create(sender: Sender<Note>) -> Result<NoteGenerator, Box<dyn Error>> {
+impl EventGenerator {
+    pub fn create(sender: Sender<Event>) -> Result<EventGenerator, Box<dyn Error>> {
         let ext = Extension::builder()
             .ops(vec![queue::decl()])
             .state(move |state| {
@@ -50,7 +53,7 @@ impl NoteGenerator {
 
         runtime.execute_script("<create>", INIT_SCRIPT)?;
 
-        Ok(NoteGenerator { runtime })
+        Ok(EventGenerator { runtime })
     }
 
     pub fn request_notes(&mut self) -> Result<(), Box<dyn Error>> {
@@ -60,8 +63,8 @@ impl NoteGenerator {
 }
 
 #[op]
-fn queue(state: &mut OpState, note: Note) -> Result<(), deno_core::error::AnyError> {
-    let sender = state.borrow::<Sender<Note>>();
-    sender.send(note)?;
+fn queue(state: &mut OpState, event: Event) -> Result<(), deno_core::error::AnyError> {
+    let sender = state.borrow::<Sender<Event>>();
+    sender.send(event)?;
     Ok(())
 }

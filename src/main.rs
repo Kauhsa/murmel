@@ -1,22 +1,22 @@
-mod note;
-mod note_generator;
+mod event;
+mod event_generator;
 
+use event::Event;
+use event_generator::EventGenerator;
 use midir::os::unix::VirtualOutput;
 use midir::MidiOutput;
-use note::Note;
-use note_generator::NoteGenerator;
 use std::error::Error;
 use std::sync::mpsc::channel;
 use std::thread::{self, sleep};
 use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let (sender, receiver) = channel::<Note>();
+    let (sender, receiver) = channel::<Event>();
 
     thread::Builder::new()
-        .name("note_generator".to_string())
+        .name("event_generator".to_string())
         .spawn(move || {
-            let mut exec = NoteGenerator::create(sender.clone()).unwrap();
+            let mut exec = EventGenerator::create(sender.clone()).unwrap();
 
             loop {
                 exec.request_notes().unwrap();
@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         })?;
 
-    receiver.iter().for_each(|note| println!("{:?}", note));
+    receiver.iter().for_each(|event| println!("{:?}", event));
 
     Ok(())
 }
