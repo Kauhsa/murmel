@@ -13,14 +13,16 @@ use std::time::Duration;
 fn main() -> Result<(), Box<dyn Error>> {
     let (sender, receiver) = channel::<Note>();
 
-    thread::spawn(move || {
-        let mut exec = NoteGenerator::create(sender.clone()).unwrap();
+    thread::Builder::new()
+        .name("note_generator".to_string())
+        .spawn(move || {
+            let mut exec = NoteGenerator::create(sender.clone()).unwrap();
 
-        loop {
-            exec.request_notes().unwrap();
-            sleep(Duration::from_secs(1))
-        }
-    });
+            loop {
+                exec.request_notes().unwrap();
+                sleep(Duration::from_secs(1))
+            }
+        })?;
 
     receiver.iter().for_each(|note| println!("{:?}", note));
 
