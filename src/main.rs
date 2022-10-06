@@ -9,6 +9,7 @@ use std::error::Error;
 use std::sync::mpsc::channel;
 use std::thread::{self, sleep};
 use std::time::{Duration, Instant};
+use thread_priority::*;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let (sender, receiver) = channel::<Event>();
@@ -24,25 +25,27 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         })?;
 
-    let player_thread = thread::Builder::new()
+    let player_thread_priority = ThreadPriority::Crossplatform(50u8.try_into().unwrap());
+
+    let player_thread = ThreadBuilder::default()
         .name("player".to_string())
-        .spawn(move || {
-            let mut last_break: Option<Instant> = None;
+        .priority(player_thread_priority)
+        .spawn_careless(move || {
+            let mut start: Option<Instant> = None;
+            let mut should_have_elapsed = Duration::ZERO;
 
             for event in receiver.iter() {
+                if let None = start {
+                    start = Some(Instant::now())
+                }
+
                 println!("{:?}", event);
 
                 if let Event::Break { duration } = event {
-                    let break_duration = Duration::from_millis(duration.into());
-
-                    let sleep_duration = match last_break {
-                        Some(instant) => break_duration.checked_sub(instant.elapsed()),
-                        None => Some(break_duration),
-                    };
-
-                    spin_sleep::sleep(sleep_duration.unwrap_or(Duration::ZERO));
-
-                    last_break = Some(Instant::now())
+                    should_have_elapsed += Duration::from_millis(duration.into());
+                    let sleep_duration = should_have_elapsed - start.unwrap().elapsed();
+                    println!("Sleeping {:?}", sleep_duration);
+                    spin_sleep::sleep(sleep_duration);
                 }
             }
         })?;
