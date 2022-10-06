@@ -8,23 +8,47 @@ use midir::MidiOutput;
 use std::error::Error;
 use std::sync::mpsc::channel;
 use std::thread::{self, sleep};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let (sender, receiver) = channel::<Event>();
 
-    thread::Builder::new()
+    let event_generator_thread = thread::Builder::new()
         .name("event_generator".to_string())
         .spawn(move || {
             let mut exec = EventGenerator::create(sender.clone()).unwrap();
 
             loop {
-                exec.request_notes(1000).unwrap();
+                exec.request_notes(1500).unwrap();
                 sleep(Duration::from_secs(1))
             }
         })?;
 
-    receiver.iter().for_each(|event| println!("{:?}", event));
+    let player_thread = thread::Builder::new()
+        .name("player".to_string())
+        .spawn(move || {
+            let mut last_break: Option<Instant> = None;
+
+            for event in receiver.iter() {
+                println!("{:?}", event);
+
+                if let Event::Break { duration } = event {
+                    let break_duration = Duration::from_millis(duration.into());
+
+                    let sleep_duration = match last_break {
+                        Some(instant) => break_duration.checked_sub(instant.elapsed()),
+                        None => Some(break_duration),
+                    };
+
+                    spin_sleep::sleep(sleep_duration.unwrap_or(Duration::ZERO));
+
+                    last_break = Some(Instant::now())
+                }
+            }
+        })?;
+
+    event_generator_thread.join();
+    player_thread.join();
 
     Ok(())
 }

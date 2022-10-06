@@ -10,4 +10,5 @@ pub enum Event {
     NoteOn { note: NoteValue },
     NoteOff { note: NoteValue },
     Break { duration: NoteDuration },
+    Print { value: String },
 }
