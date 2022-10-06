@@ -1,9 +1,7 @@
-use std::{
-    sync::mpsc::Receiver,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
-use log::debug;
+use crossbeam_channel::Receiver;
+use log::{debug, info};
 use midir::MidiOutputConnection;
 
 use crate::event::Event;
@@ -19,32 +17,46 @@ impl Player {
         let mut should_have_elapsed = Duration::ZERO;
 
         loop {
-            let event = self.receiver.recv()?;
+            let event = self.receiver.recv().expect("Channel died");
 
             if start.is_none() {
                 start = Some(Instant::now())
             }
 
-            self.process_midi_event(&event)?;
             debug!("Event: {:?}", event);
 
-            if let Event::Break { duration } = event {
-                should_have_elapsed += Duration::from_secs_f32(duration / 1000.0);
-                let sleep_duration = should_have_elapsed - start.unwrap().elapsed();
-                debug!("Break, sleeping {:?}", sleep_duration);
-                spin_sleep::sleep(sleep_duration);
+            match &event {
+                Event::NoteOn(e) => self.send_to_midi(&e.to_midi_msg())?,
+
+                Event::NoteOff(e) => self.send_to_midi(&e.to_midi_msg())?,
+
+                Event::Print { value } => {
+                    info!("Print: {}", value)
+                }
+
+                Event::Break(e) => {
+                    should_have_elapsed += Duration::from_secs_f32(e.duration / 1000.0);
+                    let sleep_duration = should_have_elapsed - start.unwrap().elapsed();
+                    debug!("Break, sleeping {:?}", sleep_duration);
+                    spin_sleep::sleep(sleep_duration)
+                }
             }
         }
     }
 
-    fn process_midi_event(&mut self, event: &Event) -> anyhow::Result<()> {
-        match &event.to_midi_msg() {
-            Some(msg) => self
-                .midi_output_connection
-                .send(msg)
-                .map_err(anyhow::Error::msg),
+    fn send_to_midi(&mut self, msg: &[u8]) -> anyhow::Result<()> {
+        self.midi_output_connection
+            .send(&msg)
+            .map_err(anyhow::Error::msg)
+    }
+}
 
-            None => Ok(()),
-        }
+const ALL_NOTES_OFF: [u8; 3] = [0xB0, 0, 0];
+
+impl Drop for Player {
+    fn drop(&mut self) {
+        self.midi_output_connection
+            .send(&ALL_NOTES_OFF)
+            .expect("Could not send all notes out message");
     }
 }

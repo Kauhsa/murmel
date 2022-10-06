@@ -1,7 +1,8 @@
 use crate::event::Event;
 
-use std::{error::Error, sync::mpsc::Sender};
+use std::error::Error;
 
+use crossbeam_channel::Sender;
 use deno_core::{op, Extension, JsRuntime, OpState, RuntimeOptions};
 use log::debug;
 
@@ -10,16 +11,17 @@ pub struct EventGenerator {
 }
 
 const INIT_SCRIPT: &str = r#"
-    const generator = function* () {
-        let i = 0;
+    const note = function* (n, duration) {
+        yield { type: "NoteOn", note: n };
+        yield { type: "Break", duration: 100 };
+        yield { type: "NoteOff", note: n };
+    } 
 
+    const generator = function* () {
         while (true) {
-            let n = i % 200;
-            yield { type: "NoteOn", note: n };
-            yield { type: "Break", duration: 100 };
-            yield { type: "NoteOff", note: n };
-            yield { type: "Break", duration: 100 };
-            i += 1;
+            yield* note(40, 100)
+            yield* note(41, 100)
+            yield* note(42, 100)
         }
     }
 
@@ -89,6 +91,6 @@ impl EventGenerator {
 #[op]
 fn queue(state: &mut OpState, event: Event) -> anyhow::Result<()> {
     let sender = state.borrow::<Sender<Event>>();
-    sender.send(event)?;
+    sender.send(event).map_err(anyhow::Error::msg)?;
     Ok(())
 }

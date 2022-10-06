@@ -5,25 +5,37 @@ pub type NoteDuration = f32;
 pub type NoteValue = u8;
 
 #[derive(Deserialize, Debug)]
-#[serde(tag = "type")]
-pub enum Event {
-    NoteOn { note: NoteValue },
-    NoteOff { note: NoteValue },
-    Break { duration: NoteDuration },
-    Print { value: String },
+pub struct NoteOn {
+    pub note: NoteValue,
 }
 
-impl Event {
-    pub fn to_midi_msg(&self) -> Option<[u8; 3]> {
-        const NOTE_ON_MSG: u8 = 0x90;
-        const NOTE_OFF_MSG: u8 = 0x80;
-
-        let velocity = 128u8;
-
-        match self {
-            Event::NoteOn { note } => Some([NOTE_ON_MSG, *note, velocity]),
-            Event::NoteOff { note } => Some([NOTE_OFF_MSG, *note, velocity]),
-            _ => None,
-        }
+impl NoteOn {
+    pub fn to_midi_msg(&self) -> [u8; 3] {
+        return [0x90, self.note, 127u8];
     }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct NoteOff {
+    pub note: NoteValue,
+}
+
+impl NoteOff {
+    pub fn to_midi_msg(&self) -> [u8; 3] {
+        return [0x80, self.note, 127u8];
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Break {
+    pub duration: NoteDuration,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(tag = "type")]
+pub enum Event {
+    NoteOn(NoteOn),
+    NoteOff(NoteOff),
+    Break(Break),
+    Print { value: String },
 }
