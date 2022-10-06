@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut exec = EventGenerator::create(sender.clone()).unwrap();
 
             loop {
-                exec.request_notes().unwrap();
+                exec.request_notes(1000).unwrap();
                 sleep(Duration::from_secs(1))
             }
         })?;

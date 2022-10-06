@@ -23,17 +23,27 @@ const INIT_SCRIPT: &str = r#"
 
     const iterator = generator()
 
-    globalThis.next = () => {
-        let { value, done } = iterator.next()
-    
-        if (!done) {
-            Deno.core.ops.queue(value)
-        }
-    }
-"#;
+    globalThis.requestNotes = (untilDuration) => {
+        let currentDuration = 0;
 
-const ITERATE: &str = r#"  
-    globalThis.next()
+        if (typeof untilDuration !== 'number') {
+            throw new Exception("untilDuration needs to be number")
+        }
+
+        while (currentDuration < untilDuration) {
+            let { value, done } = iterator.next()
+
+            if (done) {
+                break
+            }
+
+            if (value.type === "Break") {
+                currentDuration += value.duration
+            }
+
+            Deno.core.ops.queue(value)
+        }        
+    }
 "#;
 
 impl EventGenerator {
@@ -56,8 +66,12 @@ impl EventGenerator {
         Ok(EventGenerator { runtime })
     }
 
-    pub fn request_notes(&mut self) -> Result<(), Box<dyn Error>> {
-        self.runtime.execute_script("<request_notes>", ITERATE)?;
+    pub fn request_notes(&mut self, until_duration: u32) -> Result<(), Box<dyn Error>> {
+        let code = format!("globalThis.requestNotes({})", until_duration);
+
+        self.runtime
+            .execute_script("<request_notes>", code.as_str())?;
+
         Ok(())
     }
 }
