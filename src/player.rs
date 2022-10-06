@@ -4,7 +4,10 @@ use crossbeam_channel::{select, Receiver};
 use log::{debug, info};
 use midir::MidiOutputConnection;
 
-use crate::{event::Event, UiEvent};
+use crate::{
+    event::{AllNotesOff, Event},
+    UiEvent,
+};
 
 pub struct Player {
     pub receiver: Receiver<Event>,
@@ -63,18 +66,22 @@ impl Player {
 
             Event::NoteOff(e) => self.send_to_midi(&e.to_midi_msg())?,
 
-            Event::Print { value } => {
-                info!("Print: {}", value)
-            }
+            Event::AllNotesOff(e) => self.send_to_midi(&e.to_midi_msg())?,
 
-            Event::Break(e) => {
+            Event::Print { value } => info!("Print: {}", value),
+
+            Event::Wait(e) => {
                 self.should_have_elapsed += Duration::from_secs_f32(e.duration / 1000.0);
-                let sleep_duration =
-                    self.should_have_elapsed - self.first_event_instant.unwrap().elapsed();
-                debug!("Break, sleeping {:?}", sleep_duration);
+
+                let wait_duration = self
+                    .should_have_elapsed
+                    .checked_sub(self.first_event_instant.unwrap().elapsed())
+                    .unwrap_or(Duration::ZERO);
+
+                debug!("Waiting {:?}", wait_duration);
 
                 // TODO: interrupting the thread should be able to interrupt this as well.
-                spin_sleep::sleep(sleep_duration)
+                spin_sleep::sleep(wait_duration)
             }
         }
 
@@ -88,14 +95,12 @@ impl Player {
     }
 }
 
-const ALL_NOTES_OFF: [u8; 3] = [0xB0, 0, 0];
-
 impl Drop for Player {
     fn drop(&mut self) {
         debug!("Sending all notes off signal");
 
         self.midi_output_connection
-            .send(&ALL_NOTES_OFF)
+            .send(&AllNotesOff {}.to_midi_msg())
             .expect("Could not send all notes out message");
     }
 }

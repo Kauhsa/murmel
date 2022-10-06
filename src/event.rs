@@ -27,7 +27,16 @@ impl NoteOff {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct Break {
+pub struct AllNotesOff {}
+
+impl AllNotesOff {
+    pub fn to_midi_msg(&self) -> [u8; 3] {
+        [0xB0, 0, 0]
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Wait {
     pub duration: NoteDuration,
 }
 
@@ -36,6 +45,7 @@ pub struct Break {
 pub enum Event {
     NoteOn(NoteOn),
     NoteOff(NoteOff),
-    Break(Break),
+    Wait(Wait),
+    AllNotesOff(AllNotesOff),
     Print { value: String },
 }

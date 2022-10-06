@@ -13,7 +13,7 @@ pub struct EventGenerator {
 const INIT_SCRIPT: &str = r#"
     const note = function* (n, duration) {
         yield { type: "NoteOn", note: n };
-        yield { type: "Break", duration: duration };
+        yield { type: "Wait", duration: duration };
         yield { type: "NoteOff", note: n };
     } 
 
@@ -41,7 +41,7 @@ const INIT_SCRIPT: &str = r#"
                 break
             }
 
-            if (value.type === "Break") {
+            if (value.type === "Wait") {
                 currentDuration += value.duration
             }
 
