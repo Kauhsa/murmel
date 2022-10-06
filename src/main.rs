@@ -6,7 +6,7 @@ mod player;
 use crossbeam_channel::{unbounded, RecvTimeoutError};
 use event::Event;
 use event_generator::EventGenerator;
-use log::debug;
+use log::{debug, info};
 use midir::os::unix::VirtualOutput;
 use midir::MidiOutput;
 use player::Player;
@@ -22,8 +22,9 @@ pub enum UiEvent {
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let midi_out = MidiOutput::new("murmel")?;
+    info!("Starting...");
 
+    let midi_out = MidiOutput::new("murmel")?;
     let (event_sender, event_receiver) = unbounded::<Event>();
     let mut ui_multichannel = multichannel::Multichannel::<UiEvent>::new();
 
@@ -65,7 +66,7 @@ fn main() -> anyhow::Result<()> {
 
             let midi_output_connection = midi_out
                 .create_virtual("Virtual port")
-                .expect("Could not create midi output connection");
+                .expect("Could not create MIDI output connection");
 
             let mut player = Player::new(
                 event_receiver.clone(),
