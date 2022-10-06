@@ -11,7 +11,7 @@ pub struct NoteOn {
 
 impl NoteOn {
     pub fn to_midi_msg(&self) -> [u8; 3] {
-        return [0x90, self.note, 127u8];
+        [0x90, self.note, 127u8]
     }
 }
 
@@ -22,7 +22,7 @@ pub struct NoteOff {
 
 impl NoteOff {
     pub fn to_midi_msg(&self) -> [u8; 3] {
-        return [0x80, self.note, 127u8];
+        [0x80, self.note, 127u8]
     }
 }
 
