@@ -8,8 +8,33 @@ pub struct NoteGenerator {
     runtime: JsRuntime,
 }
 
+const INIT_SCRIPT: &str = r#"
+    const generator = function* () {
+        let i = 0;
+
+        while (i < 5) {
+            yield [i];
+            i += 1;
+        }
+    }
+
+    const iterator = generator()
+
+    globalThis.next = () => {
+        let { value, done } = iterator.next()
+    
+        if (!done) {
+            Deno.core.ops.queue(value)
+        }
+    }
+"#;
+
+const ITERATE: &str = r#"  
+    globalThis.next()
+"#;
+
 impl NoteGenerator {
-    pub fn create(sender: Sender<Note>) -> NoteGenerator {
+    pub fn create(sender: Sender<Note>) -> Result<NoteGenerator, Box<dyn Error>> {
         let ext = Extension::builder()
             .ops(vec![queue::decl()])
             .state(move |state| {
@@ -18,24 +43,18 @@ impl NoteGenerator {
             })
             .build();
 
-        let runtime = JsRuntime::new(RuntimeOptions {
+        let mut runtime = JsRuntime::new(RuntimeOptions {
             extensions: vec![ext],
             ..Default::default()
         });
 
-        NoteGenerator { runtime }
+        runtime.execute_script("<create>", INIT_SCRIPT)?;
+
+        Ok(NoteGenerator { runtime })
     }
 
     pub fn request_notes(&mut self) -> Result<(), Box<dyn Error>> {
-        let script: &str = r#"
-            Deno.core.ops.queue([1, 2, 3, 99, -1000]);
-            Deno.core.ops.queue([1, 2, 3, 99, -1000]);
-            Deno.core.ops.queue([1, 2, 3, 99, -1000]);
-            Deno.core.ops.queue([1, 2, 3, 99, -1000]);
-        "#;
-
-        self.runtime.execute_script("<run>", script)?;
-
+        self.runtime.execute_script("<request_notes>", ITERATE)?;
         Ok(())
     }
 }
