@@ -49,7 +49,7 @@ const INIT_SCRIPT: &str = r#"
 "#;
 
 impl EventGenerator {
-    pub fn create(sender: Sender<Event>) -> Result<EventGenerator, Box<dyn Error>> {
+    pub fn create(sender: Sender<Event>) -> anyhow::Result<EventGenerator> {
         debug!("Creating EventGenerator");
 
         let ext = Extension::builder()
@@ -87,7 +87,7 @@ impl EventGenerator {
 }
 
 #[op]
-fn queue(state: &mut OpState, event: Event) -> Result<(), deno_core::error::AnyError> {
+fn queue(state: &mut OpState, event: Event) -> anyhow::Result<()> {
     let sender = state.borrow::<Sender<Event>>();
     sender.send(event)?;
     Ok(())
