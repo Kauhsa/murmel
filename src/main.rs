@@ -4,16 +4,35 @@ use std::error::Error;
 use std::thread::sleep;
 use std::time::Duration;
 
-use deno_core::{JsRuntime, RuntimeOptions};
+use deno_core::{op, Extension, JsRuntime, RuntimeOptions};
 use midir::os::unix::VirtualOutput;
 use midir::MidiOutput;
 
+#[op]
+fn queue(nums: Vec<u8>) -> Result<(), deno_core::error::AnyError> {
+    println!("{:?}", nums);
+    Ok(())
+}
+
 const SCRIPT: &str = r#"
-Deno.core.print("Hello world!\n");
+Deno.core.ops.queue([1, 2, 3, 99, -1000]);
+Deno.core.ops.queue([1, 2, 3, 99, -1000]);
+Deno.core.ops.queue([1, 2, 3, 99, -1000]);
+Deno.core.ops.queue([1, 2, 3, 99, -1000]);
 "#;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let ext = Extension::builder()
+        .ops(vec![
+            // An op for summing an array of numbers
+            // The op-layer automatically deserializes inputs
+            // and serializes the returned Result & value
+            queue::decl(),
+        ])
+        .build();
+
     let mut runtime = JsRuntime::new(RuntimeOptions {
+        extensions: vec![ext],
         ..Default::default()
     });
 
