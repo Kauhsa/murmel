@@ -17,19 +17,19 @@ impl Player {
     }
 
     pub fn play(&mut self) {
-        let mut start: Option<Instant> = None;
+        let mut start: Instant = Instant::now(); // temporary value
         let mut should_have_elapsed = Duration::ZERO;
 
-        for event in self.receiver.iter() {
-            if let None = start {
-                start = Some(Instant::now())
+        for (i, event) in self.receiver.iter().enumerate() {
+            if i == 0 {
+                start = Instant::now();
             }
 
             debug!("Event: {:?}", event);
 
             if let Event::Break { duration } = event {
                 should_have_elapsed += Duration::from_millis(duration.into());
-                let sleep_duration = should_have_elapsed - start.unwrap().elapsed();
+                let sleep_duration = should_have_elapsed - start.elapsed();
                 debug!("Break, sleeping {:?}", sleep_duration);
                 spin_sleep::sleep(sleep_duration);
             }
