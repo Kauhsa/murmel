@@ -13,9 +13,10 @@ const INIT_SCRIPT: &str = r#"
         let i = 0;
 
         while (true) {
-            yield { type: "NoteOn", note: i };
+            let n = i % 256;
+            yield { type: "NoteOn", note: n };
             yield { type: "Break", duration: 100 };
-            yield { type: "NoteOff", note: i };
+            yield { type: "NoteOff", note: n };
             yield { type: "Break", duration: 100 };
             i += 1;
         }
