@@ -3,6 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use log::debug;
+
 use crate::event::Event;
 
 pub struct Player {
@@ -23,12 +25,12 @@ impl Player {
                 start = Some(Instant::now())
             }
 
-            println!("{:?}", event);
+            debug!("Event played: {:?}", event);
 
             if let Event::Break { duration } = event {
                 should_have_elapsed += Duration::from_millis(duration.into());
                 let sleep_duration = should_have_elapsed - start.unwrap().elapsed();
-                println!("Sleeping {:?}", sleep_duration);
+                debug!("Sleeping {:?}", sleep_duration);
                 spin_sleep::sleep(sleep_duration);
             }
         }

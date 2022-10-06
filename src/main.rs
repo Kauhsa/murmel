@@ -5,13 +5,14 @@ mod player;
 use event::Event;
 use event_generator::EventGenerator;
 use player::Player;
-use std::error::Error;
 use std::sync::mpsc::channel;
 use std::thread::{self, sleep};
 use std::time::Duration;
 use thread_priority::*;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> anyhow::Result<()> {
+    env_logger::init();
+
     let (sender, receiver) = channel::<Event>();
 
     let event_generator_thread = thread::Builder::new()
@@ -19,13 +20,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         .spawn(move || {
             let mut exec = EventGenerator::create(sender.clone()).unwrap();
 
+            // temporary hack - request 1500ms worth of events every 1000ms, so
+            // we should not ever run out
             loop {
                 exec.request_notes(1500).unwrap();
-                sleep(Duration::from_secs(1))
+                sleep(Duration::from_millis(1000))
             }
         })?;
 
-    let player_thread_priority = ThreadPriority::Crossplatform(50.try_into()?);
+    // tried only for OSX
+    let player_thread_priority = ThreadPriority::Crossplatform(40.try_into().unwrap());
 
     let player_thread = ThreadBuilder::default()
         .name("player".to_string())
@@ -35,8 +39,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             player.play()
         })?;
 
-    event_generator_thread.join();
-    player_thread.join();
+    event_generator_thread.join().unwrap();
+    player_thread.join().unwrap();
 
     Ok(())
 }

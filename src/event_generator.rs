@@ -3,6 +3,7 @@ use crate::event::Event;
 use std::{error::Error, sync::mpsc::Sender};
 
 use deno_core::{op, Extension, JsRuntime, OpState, RuntimeOptions};
+use log::debug;
 
 pub struct EventGenerator {
     runtime: JsRuntime,
@@ -13,7 +14,7 @@ const INIT_SCRIPT: &str = r#"
         let i = 0;
 
         while (true) {
-            let n = i % 256;
+            let n = i % 200;
             yield { type: "NoteOn", note: n };
             yield { type: "Break", duration: 100 };
             yield { type: "NoteOff", note: n };
@@ -49,6 +50,8 @@ const INIT_SCRIPT: &str = r#"
 
 impl EventGenerator {
     pub fn create(sender: Sender<Event>) -> Result<EventGenerator, Box<dyn Error>> {
+        debug!("Creating EventGenerator");
+
         let ext = Extension::builder()
             .ops(vec![queue::decl()])
             .state(move |state| {
@@ -62,12 +65,18 @@ impl EventGenerator {
             ..Default::default()
         });
 
+        debug!("Running init script");
+
         runtime.execute_script("<create>", INIT_SCRIPT)?;
+
+        debug!("Creation done");
 
         Ok(EventGenerator { runtime })
     }
 
     pub fn request_notes(&mut self, until_duration: u32) -> Result<(), Box<dyn Error>> {
+        debug!("Requesting notes for {} ms", until_duration);
+
         let code = format!("globalThis.requestNotes({})", until_duration);
 
         self.runtime
