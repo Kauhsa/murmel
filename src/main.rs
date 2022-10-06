@@ -1,15 +1,25 @@
+mod note;
 mod note_generator;
 
 use midir::os::unix::VirtualOutput;
 use midir::MidiOutput;
+use note::Note;
 use note_generator::NoteGenerator;
 use std::error::Error;
-use std::thread::sleep;
+use std::sync::mpsc::channel;
+use std::thread::{self, sleep};
 use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut exec = NoteGenerator::create();
-    exec.run()?;
+    let (sender, receiver) = channel::<Note>();
+
+    thread::spawn(move || loop {
+        let mut exec = NoteGenerator::create(sender.clone());
+        exec.request_notes().unwrap();
+        sleep(Duration::from_secs(1))
+    });
+
+    receiver.iter().for_each(|note| println!("{:?}", note));
     Ok(())
 }
 

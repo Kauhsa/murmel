@@ -1,14 +1,22 @@
-use std::error::Error;
+use crate::note::Note;
 
-use deno_core::{op, Extension, JsRuntime, RuntimeOptions};
+use std::{error::Error, sync::mpsc::Sender};
+
+use deno_core::{op, Extension, JsRuntime, OpState, RuntimeOptions};
 
 pub struct NoteGenerator {
     runtime: JsRuntime,
 }
 
 impl NoteGenerator {
-    pub fn create() -> NoteGenerator {
-        let ext = Extension::builder().ops(vec![queue::decl()]).build();
+    pub fn create(sender: Sender<Note>) -> NoteGenerator {
+        let ext = Extension::builder()
+            .ops(vec![queue::decl()])
+            .state(move |state| {
+                state.put(sender.clone());
+                Ok(())
+            })
+            .build();
 
         let runtime = JsRuntime::new(RuntimeOptions {
             extensions: vec![ext],
@@ -18,7 +26,7 @@ impl NoteGenerator {
         NoteGenerator { runtime }
     }
 
-    pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn request_notes(&mut self) -> Result<(), Box<dyn Error>> {
         let script: &str = r#"
             Deno.core.ops.queue([1, 2, 3, 99, -1000]);
             Deno.core.ops.queue([1, 2, 3, 99, -1000]);
@@ -33,7 +41,8 @@ impl NoteGenerator {
 }
 
 #[op]
-fn queue(nums: Vec<u8>) -> Result<(), deno_core::error::AnyError> {
-    println!("{:?}", nums);
+fn queue(state: &mut OpState, note: Note) -> Result<(), deno_core::error::AnyError> {
+    let sender = state.borrow::<Sender<Note>>();
+    sender.send(note)?;
     Ok(())
 }
