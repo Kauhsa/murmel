@@ -1,14 +1,16 @@
 mod event;
 mod event_generator;
+mod player;
 
 use event::Event;
 use event_generator::EventGenerator;
 use midir::os::unix::VirtualOutput;
 use midir::MidiOutput;
+use player::Player;
 use std::error::Error;
 use std::sync::mpsc::channel;
 use std::thread::{self, sleep};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use thread_priority::*;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -25,29 +27,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         })?;
 
-    let player_thread_priority = ThreadPriority::Crossplatform(50u8.try_into().unwrap());
+    let player_thread_priority = ThreadPriority::Crossplatform(50.try_into()?);
 
     let player_thread = ThreadBuilder::default()
         .name("player".to_string())
         .priority(player_thread_priority)
         .spawn_careless(move || {
-            let mut start: Option<Instant> = None;
-            let mut should_have_elapsed = Duration::ZERO;
-
-            for event in receiver.iter() {
-                if let None = start {
-                    start = Some(Instant::now())
-                }
-
-                println!("{:?}", event);
-
-                if let Event::Break { duration } = event {
-                    should_have_elapsed += Duration::from_millis(duration.into());
-                    let sleep_duration = should_have_elapsed - start.unwrap().elapsed();
-                    println!("Sleeping {:?}", sleep_duration);
-                    spin_sleep::sleep(sleep_duration);
-                }
-            }
+            let mut player = Player::new(receiver);
+            player.play()
         })?;
 
     event_generator_thread.join();
