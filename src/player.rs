@@ -28,7 +28,7 @@ impl Player {
             debug!("Event: {:?}", event);
 
             if let Event::Break { duration } = event {
-                should_have_elapsed += Duration::from_millis(duration.into());
+                should_have_elapsed += Duration::from_secs_f32(duration / 1000.0);
                 let sleep_duration = should_have_elapsed - start.elapsed();
                 debug!("Break, sleeping {:?}", sleep_duration);
                 spin_sleep::sleep(sleep_duration);

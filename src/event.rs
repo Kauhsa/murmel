@@ -1,7 +1,7 @@
 use deno_core::serde::Deserialize;
 
 /** beats? milliseconds? dunno yet. */
-pub type NoteDuration = u32;
+pub type NoteDuration = f32;
 pub type NoteValue = u8;
 
 #[derive(Deserialize, Debug)]
