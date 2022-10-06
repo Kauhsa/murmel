@@ -34,8 +34,7 @@ impl Player {
 
     pub fn play(&mut self) -> anyhow::Result<()> {
         loop {
-            // TODO: ui_receiver should have a priority, which is does not right
-            // now.
+            // TODO: ui_receiver should have a priority - I don't think it does now.
             select! {
                 recv(self.ui_receiver) -> e => match e {
                     Ok(UiEvent::Exit) => break,
@@ -73,6 +72,8 @@ impl Player {
                 let sleep_duration =
                     self.should_have_elapsed - self.first_event_instant.unwrap().elapsed();
                 debug!("Break, sleeping {:?}", sleep_duration);
+
+                // TODO: interrupting the thread should be able to interrupt this as well.
                 spin_sleep::sleep(sleep_duration)
             }
         }
