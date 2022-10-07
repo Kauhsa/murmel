@@ -1,14 +1,15 @@
-const note = function* (n, duration) {
-    yield { type: "NoteOn", note: n };
-    yield { type: "Wait", duration: duration };
-    yield { type: "NoteOff", note: n };
+const note = function* (note, duration) {
+    yield { type: "NoteOn", note };
+    yield { type: "Wait", duration };
+    yield { type: "NoteOff", note };
 }
 
 const generator = function* () {
+    let i = 0;
+
     while (true) {
-        yield* note(40, 100)
-        yield* note(41, 100)
-        yield* note(42, 100)
+        yield* note(i % 127, 100);
+        i++;
     }
 }
 

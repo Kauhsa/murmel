@@ -10,7 +10,7 @@ use deno_core::{
     v8::{self, HandleScope},
     FsModuleLoader, JsRuntime, ModuleId, RuntimeOptions,
 };
-use log::debug;
+use log::{debug, info};
 use serde::Deserialize;
 use tokio::runtime::Runtime;
 
@@ -24,18 +24,23 @@ pub struct EventGenerator {
 
 impl EventGenerator {
     pub fn create(entrypoint: &Path, sender: Sender<Event>) -> anyhow::Result<EventGenerator> {
-        debug!("Creating EventGenerator");
+        let async_runtime = Runtime::new().unwrap();
+
+        info!("Initializing JS runtime");
 
         let mut js_runtime = JsRuntime::new(RuntimeOptions {
             module_loader: Some(Rc::new(FsModuleLoader {})),
             ..Default::default()
         });
 
-        let async_runtime = Runtime::new().unwrap();
-        let executor = async_runtime.handle();
-        let module_id = load_main_module(executor, &mut js_runtime, entrypoint)?;
+        info!(
+            "Loading main module from path {}",
+            entrypoint.to_string_lossy()
+        );
 
-        debug!("Creation done");
+        let module_id = load_main_module(async_runtime.handle(), &mut js_runtime, entrypoint)?;
+
+        info!("Main module loaded");
 
         Ok(EventGenerator {
             js_runtime,
@@ -133,7 +138,9 @@ fn call_generator_function(
     let next_fn = v8::Local::<v8::Function>::try_from(next_fn_value)
         .map_err(|e| anyhow::Error::new(e).context("Excepted next() to be a function"))?;
 
-    let result_value = next_fn.call(scope, iterable, &[]).unwrap();
+    let result_value = next_fn
+        .call(scope, iterable, &[])
+        .ok_or_else(|| anyhow!("Calling next() failed"))?;
 
     let result = serde_v8::from_v8::<EventGeneratorResult>(scope, result_value)?;
 
