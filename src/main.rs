@@ -10,14 +10,16 @@ use log::{debug, info};
 use midir::os::unix::VirtualOutput;
 use midir::MidiOutput;
 use player::Player;
-use std::thread;
 use std::time::Duration;
+use std::{fs, thread};
 use thread_priority::*;
 
 #[derive(Clone, Copy)]
 pub enum UiEvent {
     Exit,
 }
+
+const ENTRYPOINT: &str = "./samples/test.js";
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
@@ -36,13 +38,17 @@ fn main() -> anyhow::Result<()> {
         .spawn(move || {
             debug!("Event generator thread started");
 
-            let mut event_generator =
-                EventGenerator::create(event_sender).expect("Could not create event generator");
+            let entrypoint = fs::canonicalize(ENTRYPOINT).unwrap();
+
+            let mut event_generator = EventGenerator::create(entrypoint.as_path(), event_sender)
+                .expect("Could not create event generator");
 
             // temporary hack - request 1500ms worth of events every 1000ms, so
             // we should not ever run out
             loop {
-                event_generator.request_notes(1500).unwrap();
+                event_generator
+                    .request_notes(Duration::from_millis(1500))
+                    .unwrap();
 
                 match receiver_for_event.recv_timeout(Duration::from_millis(1000)) {
                     Ok(UiEvent::Exit) => break,
