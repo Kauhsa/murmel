@@ -62,7 +62,8 @@ fn main() -> anyhow::Result<()> {
 
     /* player thread */
 
-    let player_thread_priority = ThreadPriority::Crossplatform(40.try_into().unwrap());
+    let thread_priority_value: ThreadPriorityValue = 40.try_into().unwrap();
+    let player_thread_priority = ThreadPriority::Crossplatform(thread_priority_value);
     let receiver_for_player = ui_multichannel.get_receiver();
     let player_thread = ThreadBuilder::default()
         .name("player".to_string())

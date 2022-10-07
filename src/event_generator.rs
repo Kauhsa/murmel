@@ -51,7 +51,7 @@ impl EventGenerator {
     }
 
     pub fn request_notes(&mut self, until_duration: Duration) -> Result<(), anyhow::Error> {
-        let module = &self.js_runtime.get_module_namespace(self.module_id)?;
+        let module = self.js_runtime.get_module_namespace(self.module_id)?;
         let isolate = self.js_runtime.v8_isolate();
         let val = module.open(isolate);
 
