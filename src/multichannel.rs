@@ -1,4 +1,4 @@
-use crossbeam_channel::{unbounded, Receiver, SendError, Sender};
+use crossbeam::channel::{unbounded, Receiver, SendError, Sender};
 
 pub struct Multichannel<T: Copy> {
     senders: Vec<Sender<T>>,

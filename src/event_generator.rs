@@ -1,9 +1,8 @@
-use crate::event::Event;
+use crate::{event::Event, event_stream::EventStream};
 
-use std::{path::Path, rc::Rc, time::Duration};
+use std::{path::Path, rc::Rc, sync::Arc, time::Duration};
 
 use anyhow::anyhow;
-use crossbeam_channel::Sender;
 use deno_core::{
     serde_v8,
     url::Url,
@@ -19,11 +18,11 @@ pub struct EventGenerator {
     async_runtime: Runtime,
     js_runtime: JsRuntime,
     module_id: ModuleId,
-    sender: Sender<Event>,
+    sender: Arc<EventStream>,
 }
 
 impl EventGenerator {
-    pub fn create(entrypoint: &Path, sender: Sender<Event>) -> anyhow::Result<EventGenerator> {
+    pub fn create(entrypoint: &Path, sender: Arc<EventStream>) -> anyhow::Result<EventGenerator> {
         let async_runtime = Runtime::new().unwrap();
 
         info!("Initializing JS runtime");
@@ -76,7 +75,7 @@ impl EventGenerator {
                         dur += Duration::from_secs_f32(wait_event.duration / 1000.0)
                     }
 
-                    self.sender.send(event)?
+                    self.sender.push_event(event)
                 }
                 None => {
                     debug!("No event, even though iterable is done")

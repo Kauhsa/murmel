@@ -1,16 +1,21 @@
-use std::time::{Duration, Instant};
+use std::{
+    sync::Arc,
+    thread::yield_now,
+    time::{Duration, Instant},
+};
 
-use crossbeam_channel::{select, Receiver};
+use crossbeam::channel::{Receiver, TryRecvError};
 use log::{debug, info};
 use midir::MidiOutputConnection;
 
 use crate::{
     event::{AllNotesOff, Event},
+    event_stream::EventStream,
     UiEvent,
 };
 
 pub struct Player {
-    pub receiver: Receiver<Event>,
+    pub event_stream: Arc<EventStream>,
     pub midi_output_connection: MidiOutputConnection,
     pub ui_receiver: Receiver<UiEvent>,
 
@@ -19,14 +24,18 @@ pub struct Player {
     should_have_elapsed: Duration,
 }
 
+trait PlayerEvent {
+    fn next(&self) -> Option<Event>;
+}
+
 impl Player {
     pub fn new(
-        event_receiver: Receiver<Event>,
+        player_event: PlayerEvent,
         midi_output_connection: MidiOutputConnection,
         ui_receiver: Receiver<UiEvent>,
     ) -> Self {
         Player {
-            receiver: event_receiver,
+            event_stream,
             ui_receiver,
             midi_output_connection,
 
@@ -37,17 +46,17 @@ impl Player {
 
     pub fn start_event_processing_loop(&mut self) -> anyhow::Result<()> {
         loop {
-            // TODO: ui_receiver should have a priority - I don't think it does now.
-            select! {
-                recv(self.ui_receiver) -> e => match e {
-                    Ok(UiEvent::Exit) => break,
-                    _ => ()
-                },
-
-                recv(self.receiver) -> e => match e {
-                    Ok(event) => self.process_new_event(event)?,
-                    _ => ()
+            match self.ui_receiver.try_recv() {
+                Ok(UiEvent::Exit) => break,
+                Err(TryRecvError::Empty) => (),
+                Err(TryRecvError::Disconnected) => {
+                    return Err(anyhow::anyhow!("UI receiver disconnected"))
                 }
+            }
+
+            match self.event_stream.get_event() {
+                Some(event) => self.process_new_event(event)?,
+                None => yield_now(), // TODO: if no event, we busy-wait until there is.
             }
         }
 
@@ -83,6 +92,8 @@ impl Player {
                 // TODO: interrupting the thread should be able to interrupt this as well.
                 spin_sleep::sleep(wait_duration)
             }
+
+            Event::Marker => {}
         }
 
         Ok(())

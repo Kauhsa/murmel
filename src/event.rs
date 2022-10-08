@@ -48,4 +48,5 @@ pub enum Event {
     Wait(Wait),
     AllNotesOff(AllNotesOff),
     Print { value: String },
+    Marker,
 }
