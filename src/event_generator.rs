@@ -1,6 +1,6 @@
-use crate::{event::Event, event_stream::EventStream};
+use crate::event::Event;
 
-use std::{path::Path, rc::Rc, sync::Arc, time::Duration};
+use std::{path::Path, rc::Rc, time::Duration};
 
 use anyhow::anyhow;
 use deno_core::{
@@ -18,11 +18,10 @@ pub struct EventGenerator {
     async_runtime: Runtime,
     js_runtime: JsRuntime,
     module_id: ModuleId,
-    sender: Arc<EventStream>,
 }
 
 impl EventGenerator {
-    pub fn create(entrypoint: &Path, sender: Arc<EventStream>) -> anyhow::Result<EventGenerator> {
+    pub fn create(entrypoint: &Path) -> anyhow::Result<EventGenerator> {
         let async_runtime = Runtime::new().unwrap();
 
         info!("Initializing JS runtime");
@@ -45,11 +44,10 @@ impl EventGenerator {
             js_runtime,
             async_runtime,
             module_id,
-            sender,
         })
     }
 
-    pub fn request_notes(&mut self, until_duration: Duration) -> Result<(), anyhow::Error> {
+    pub fn request_notes(&mut self, until_duration: Duration) -> Result<Vec<Event>, anyhow::Error> {
         let module = self.js_runtime.get_module_namespace(self.module_id)?;
         let isolate = self.js_runtime.v8_isolate();
         let val = module.open(isolate);
@@ -59,6 +57,8 @@ impl EventGenerator {
         let default_export = val.get(scope, default_str.into()).unwrap();
 
         let mut dur = Duration::ZERO;
+
+        let mut events = vec![];
 
         while dur < until_duration {
             let EventGeneratorResult { done, value } =
@@ -75,7 +75,7 @@ impl EventGenerator {
                         dur += Duration::from_secs_f32(wait_event.duration / 1000.0)
                     }
 
-                    self.sender.push_event(event)
+                    events.push(event)
                 }
                 None => {
                     debug!("No event, even though iterable is done")
@@ -83,7 +83,7 @@ impl EventGenerator {
             }
         }
 
-        Ok(())
+        Ok(events)
     }
 }
 

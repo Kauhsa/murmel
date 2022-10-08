@@ -1,5 +1,4 @@
 use std::{
-    sync::Arc,
     thread::yield_now,
     time::{Duration, Instant},
 };
@@ -10,12 +9,11 @@ use midir::MidiOutputConnection;
 
 use crate::{
     event::{AllNotesOff, Event},
-    event_stream::EventStream,
     UiEvent,
 };
 
-pub struct Player {
-    pub event_stream: Arc<EventStream>,
+pub struct Player<'a, T: PlayerEventSource> {
+    pub player_event_source: &'a T,
     pub midi_output_connection: MidiOutputConnection,
     pub ui_receiver: Receiver<UiEvent>,
 
@@ -24,18 +22,18 @@ pub struct Player {
     should_have_elapsed: Duration,
 }
 
-trait PlayerEvent {
+pub trait PlayerEventSource {
     fn next(&self) -> Option<Event>;
 }
 
-impl Player {
+impl<'a, T: PlayerEventSource> Player<'a, T> {
     pub fn new(
-        player_event: PlayerEvent,
+        player_event_source: &'a T,
         midi_output_connection: MidiOutputConnection,
         ui_receiver: Receiver<UiEvent>,
     ) -> Self {
         Player {
-            event_stream,
+            player_event_source,
             ui_receiver,
             midi_output_connection,
 
@@ -54,9 +52,9 @@ impl Player {
                 }
             }
 
-            match self.event_stream.get_event() {
+            match self.player_event_source.next() {
                 Some(event) => self.process_new_event(event)?,
-                None => yield_now(), // TODO: if no event, we busy-wait until there is.
+                None => yield_now(), // TODO: don't busy-wait.
             }
         }
 
@@ -106,7 +104,7 @@ impl Player {
     }
 }
 
-impl Drop for Player {
+impl<'a, T: PlayerEventSource> Drop for Player<'a, T> {
     fn drop(&mut self) {
         debug!("Sending all notes off signal");
 

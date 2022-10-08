@@ -1,21 +1,18 @@
 mod event;
 mod event_generator;
-mod event_stream;
+mod event_thread;
 mod multichannel;
 mod player;
 
-use crossbeam::channel::RecvTimeoutError;
-use event_generator::EventGenerator;
+use anyhow::anyhow;
 use log::{debug, info};
 use midir::os::unix::VirtualOutput;
 use midir::MidiOutput;
 use player::Player;
-use std::sync::Arc;
-use std::time::Duration;
-use std::{fs, thread};
+use std::path::Path;
 use thread_priority::*;
 
-use crate::event_stream::EventStream;
+use crate::event_thread::EventThread;
 
 #[derive(Clone, Copy)]
 pub enum UiEvent {
@@ -30,66 +27,37 @@ fn main() -> anyhow::Result<()> {
     info!("Starting...");
 
     let midi_out = MidiOutput::new("murmel")?;
-    let event_stream = Arc::new(EventStream::new());
     let mut ui_multichannel = multichannel::Multichannel::<UiEvent>::new();
-
-    /* event generator thread */
-
-    let receiver_for_event = ui_multichannel.get_receiver();
-    let event_stream_for_generator = event_stream.clone();
-    let event_generator_thread = thread::Builder::new()
-        .name("event_generator".to_string())
-        .spawn(move || {
-            debug!("Event generator thread started");
-
-            let entrypoint = fs::canonicalize(ENTRYPOINT).unwrap();
-
-            let mut event_generator =
-                EventGenerator::create(entrypoint.as_path(), event_stream_for_generator)
-                    .expect("Could not create event generator");
-
-            // temporary hack - request 1500ms worth of events every 1000ms, so
-            // we should not ever run out
-            loop {
-                event_generator
-                    .request_notes(Duration::from_millis(1500))
-                    .unwrap();
-
-                match receiver_for_event.recv_timeout(Duration::from_millis(1000)) {
-                    Ok(UiEvent::Exit) => break,
-                    Err(RecvTimeoutError::Timeout) => (),
-                    Err(e) => panic!("{}", e),
-                }
-            }
-
-            debug!("Event generator thread exited");
-        })?;
 
     /* player thread */
 
     let thread_priority_value: ThreadPriorityValue = 40.try_into().unwrap();
     let player_thread_priority = ThreadPriority::Crossplatform(thread_priority_value);
     let receiver_for_player = ui_multichannel.get_receiver();
-    let event_stream_for_player = event_stream.clone();
     let player_thread = ThreadBuilder::default()
         .name("player".to_string())
         .priority(player_thread_priority)
-        .spawn_careless(move || {
+        .spawn_careless(move || -> Result<(), anyhow::Error> {
             debug!("Player thread started");
 
             let midi_output_connection = midi_out
                 .create_virtual("Virtual port")
-                .expect("Could not create MIDI output connection");
+                .map_err(|_| anyhow!("Could not create midi port"))?;
 
-            let mut player = Player::new(
-                event_stream_for_player,
-                midi_output_connection,
-                receiver_for_player,
-            );
+            let event_thread = EventThread::spawn(Path::new(ENTRYPOINT))?;
 
-            player.start_event_processing_loop().unwrap();
+            {
+                let mut player =
+                    Player::new(&event_thread, midi_output_connection, receiver_for_player);
+
+                player.start_event_processing_loop()?;
+            }
+
+            event_thread.exit()?;
+            event_thread.handle.join().unwrap()?; // TODO: map to appropriate error
 
             debug!("Player thread exited");
+            Ok(())
         })?;
 
     ctrlc::set_handler(move || {
@@ -100,8 +68,8 @@ fn main() -> anyhow::Result<()> {
 
     /* let's go! */
 
-    event_generator_thread.join().unwrap();
-    player_thread.join().unwrap();
+    // TODO
+    player_thread.join().expect("foo")?;
 
     Ok(())
 }

@@ -5,11 +5,26 @@ const note = function* (note, duration) {
 }
 
 const generator = function* () {
-    let i = 0;
+    let base = 1;
 
     while (true) {
-        yield* note(i % 127, 100);
-        i++;
+        yield { type: 'Marker'}
+        yield* note(base, 100);
+        yield* note(base, 100);
+        yield* note(base, 100);
+        yield* note(base, 100);
+        yield* note(base, 100);
+        yield* note(base, 100);
+        yield* note(base, 100);
+        yield* note(base, 100);
+        yield* note(base, 100);
+        yield* note(base, 100);
+        yield* note(base, 100);
+        yield* note(base, 100);
+        yield* note(base, 100);
+        yield* note(base, 100);
+        yield* note(base, 100);
+        yield* note(base, 100);
     }
 }
 
