@@ -37,6 +37,8 @@ impl EventThread {
             .spawn(move || -> Result<(), anyhow::Error> {
                 debug!("Event thread started");
 
+                let (egt_sender, egt_receiver) = bounded(1);
+
                 let mut egt = new_event_generator_thread(&entrypoint);
                 egt.ready.recv()?;
 
@@ -46,15 +48,12 @@ impl EventThread {
                 loop {
                     match action_rx.recv() {
                         Ok(Action::GetEvents { until_duration }) => {
-                            // TODO: bad idea to generate a new receiver every time. probably.
-                            let (sender, receiver) = bounded(1);
-
                             egt.sender.send(TAction::GetEvents {
                                 until_duration,
-                                sender,
+                                sender: egt_sender.clone(),
                             })?;
 
-                            let new_events = receiver.recv()??;
+                            let new_events = egt_receiver.recv()??;
                             let mut events = events.lock().unwrap();
 
                             for event in new_events {
@@ -166,7 +165,7 @@ struct NewEventGeneratorResult {
 
 fn new_event_generator_thread(entrypoint: &Path) -> NewEventGeneratorResult {
     let entrypoint = entrypoint.to_path_buf();
-    let (action_tx, action_rx) = bounded::<TAction>(128);
+    let (action_tx, action_rx) = bounded::<TAction>(1);
     let (ready_sender, ready_receiver) = bounded::<()>(1);
 
     spawn(move || -> anyhow::Result<()> {

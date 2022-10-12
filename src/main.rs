@@ -4,6 +4,10 @@ mod event_generator;
 mod event_thread;
 mod player;
 
+use crate::crossterm_raw_logger::CrosstermRawLogger;
+use crate::event_thread::EventThread;
+use crate::player::PlayerCtrlEvent;
+
 use anyhow::anyhow;
 use crossterm::event::{poll, read, Event, KeyCode, KeyModifiers};
 use crossterm::terminal::{
@@ -20,10 +24,6 @@ use std::thread;
 use std::time::Duration;
 use thread_priority::*;
 
-use crate::crossterm_raw_logger::CrosstermRawLogger;
-use crate::event_thread::EventThread;
-use crate::player::PlayerCtrlEvent;
-
 #[derive(Clone, Copy)]
 pub enum UiEvent {
     Exit,
@@ -36,6 +36,9 @@ fn main() -> anyhow::Result<()> {
     info!("Starting...");
 
     let midi_out = MidiOutput::new("murmel")?;
+    let midi_output_connection = midi_out
+        .create_virtual("Virtual port")
+        .map_err(|e| anyhow!("Could not create midi port: {:?}", e))?;
 
     /* event thread */
     let event_thread = EventThread::spawn(Path::new(ENTRYPOINT))?;
@@ -43,14 +46,10 @@ fn main() -> anyhow::Result<()> {
     {
         let event_thread = &event_thread;
 
-        let midi_output_connection = midi_out
-            .create_virtual("Virtual port")
-            .map_err(|e| anyhow!("Could not create midi port: {:?}", e))?;
-
         let (player_ctrl_tx, mut player) = Player::new(event_thread, midi_output_connection);
 
         thread::scope(|scope| -> anyhow::Result<()> {
-            let player = scope.spawn(move || -> Result<(), anyhow::Error> {
+            let player_thread = scope.spawn(move || -> Result<(), anyhow::Error> {
                 debug!("Player thread started");
 
                 set_current_thread_priority(get_player_thread_priority())
@@ -65,7 +64,7 @@ fn main() -> anyhow::Result<()> {
 
             /* ui events  */
 
-            while !player.is_finished() {
+            while !player_thread.is_finished() {
                 if !poll(Duration::from_millis(100))? {
                     continue;
                 }
