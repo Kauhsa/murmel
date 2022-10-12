@@ -46,7 +46,7 @@ impl<'a, T: PlayerEventSource> Player<'a, T> {
         loop {
             match self.ctrl_receiver.try_recv() {
                 Ok(PlayerCtrlEvent::Exit) => break,
-                Err(TryRecvError::Empty) => yield_now(), // TODO: don't busy-wait.
+                Err(TryRecvError::Empty) => (),
                 Err(TryRecvError::Disconnected) => {
                     return Err(anyhow::anyhow!("UI receiver disconnected"))
                 }
