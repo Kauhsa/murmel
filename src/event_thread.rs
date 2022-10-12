@@ -58,7 +58,7 @@ impl EventThread {
                             let mut events = events.lock().unwrap();
 
                             for event in new_events {
-                                events.push_front(event);
+                                events.push_back(event);
                             }
                         }
 
@@ -69,11 +69,14 @@ impl EventThread {
                             // where is the marker? truncate data.
                             {
                                 let mut evs = events.lock().unwrap();
+
                                 let marker_index =
-                                    evs.iter().position(|x| matches!(x, Event::Marker));
+                                    evs.iter().position(|e| matches!(e, Event::Marker));
 
                                 match marker_index {
                                     Some(i) => evs.truncate(i),
+
+                                    // if there is no marker, we should queue events until we do.
                                     None => todo!(),
                                 }
                             }
@@ -83,9 +86,7 @@ impl EventThread {
                                 new_egt.ready.recv()?;
                                 let old_egt = egt;
                                 egt = new_egt;
-
-                                // drop old egt in another thread. might be slow?
-                                spawn(move || drop(old_egt));
+                                drop(old_egt);
                             }
                         }
 
