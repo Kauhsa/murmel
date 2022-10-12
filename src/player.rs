@@ -3,50 +3,50 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crossbeam::channel::{Receiver, TryRecvError};
+use crossbeam::channel::{bounded, Receiver, Sender, TryRecvError};
 use log::{debug, info};
 use midir::MidiOutputConnection;
 
-use crate::{
-    event::{AllNotesOff, Event},
-    UiEvent,
-};
+use crate::event::{AllNotesOff, Event};
+
+pub enum PlayerCtrlEvent {
+    Exit,
+}
 
 pub struct Player<'a, T: PlayerEventSource> {
     pub player_event_source: &'a T,
     pub midi_output_connection: MidiOutputConnection,
-    pub ui_receiver: Receiver<UiEvent>,
+    pub ctrl_receiver: Receiver<PlayerCtrlEvent>,
 
     // internal player state
     first_event_instant: Option<Instant>,
     should_have_elapsed: Duration,
 }
 
-pub trait PlayerEventSource {
-    fn next(&self) -> Option<Event>;
-}
-
 impl<'a, T: PlayerEventSource> Player<'a, T> {
     pub fn new(
         player_event_source: &'a T,
         midi_output_connection: MidiOutputConnection,
-        ui_receiver: Receiver<UiEvent>,
-    ) -> Self {
-        Player {
+    ) -> (Sender<PlayerCtrlEvent>, Self) {
+        let (tx, rx) = bounded(128);
+
+        let player = Player {
             player_event_source,
-            ui_receiver,
+            ctrl_receiver: rx,
             midi_output_connection,
 
             first_event_instant: None,
             should_have_elapsed: Duration::ZERO,
-        }
+        };
+
+        (tx, player)
     }
 
-    pub fn start_event_processing_loop(&mut self) -> anyhow::Result<()> {
+    pub fn run(&mut self) -> anyhow::Result<()> {
         loop {
-            match self.ui_receiver.try_recv() {
-                Ok(UiEvent::Exit) => break,
-                Err(TryRecvError::Empty) => (),
+            match self.ctrl_receiver.try_recv() {
+                Ok(PlayerCtrlEvent::Exit) => break,
+                Err(TryRecvError::Empty) => yield_now(), // TODO: don't busy-wait.
                 Err(TryRecvError::Disconnected) => {
                     return Err(anyhow::anyhow!("UI receiver disconnected"))
                 }
@@ -112,4 +112,8 @@ impl<'a, T: PlayerEventSource> Drop for Player<'a, T> {
             .send(&AllNotesOff {}.to_midi_msg())
             .expect("Could not send all notes out message");
     }
+}
+
+pub trait PlayerEventSource {
+    fn next(&self) -> Option<Event>;
 }
