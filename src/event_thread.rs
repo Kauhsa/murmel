@@ -1,137 +1,153 @@
+use crate::{
+    event::Event,
+    event_generator_thread::{new_event_generator_actor, EventGeneratorActorHandle},
+    player::PlayerEventSource,
+};
+use crossbeam::channel::{unbounded, Receiver, RecvError, Sender};
+use log::{debug, warn};
 use std::{
     collections::VecDeque,
-    fs,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    thread::{self, spawn, JoinHandle},
+    thread::{spawn, JoinHandle},
     time::Duration,
 };
 
-use crossbeam::channel::{bounded, Receiver, RecvError, Sender};
-use log::{debug, warn};
-
-use crate::{event::Event, event_generator::EventGenerator, player::PlayerEventSource};
-
-pub struct EventThread {
-    pub handle: JoinHandle<Result<(), anyhow::Error>>,
-    action_tx: Sender<Action>,
+struct EventCoordinatorActor {
+    entrypoint: PathBuf,
+    rx: Receiver<Msg>,
     events: Arc<Mutex<VecDeque<Event>>>,
+    ega: EventGeneratorActorHandle,
+    ega_join_handles: Vec<JoinHandle<anyhow::Result<()>>>,
 }
 
-enum Action {
-    GetEvents { until_duration: Duration },
+pub enum Msg {
+    LoadMoreEvents { until_duration: Duration },
     ReloadFromNextMarker,
     Exit,
 }
 
-impl EventThread {
-    pub fn spawn(entrypoint: &Path) -> Result<Self, anyhow::Error> {
-        let entrypoint = fs::canonicalize(entrypoint)?;
-        let (action_tx, action_rx) = bounded::<Action>(128);
-
+impl EventCoordinatorActor {
+    pub fn new(entrypoint: PathBuf, rx: Receiver<Msg>) -> Self {
         let events = Arc::new(Mutex::new(VecDeque::<Event>::new()));
-        let events_for_thread = events.clone();
+        let (ega, ega_jh) = new_event_generator_actor(&entrypoint);
 
-        let handle = thread::Builder::new()
-            .name("event_thread".to_string())
-            .spawn(move || -> Result<(), anyhow::Error> {
-                debug!("Event thread started");
+        EventCoordinatorActor {
+            rx,
+            events,
+            ega,
+            entrypoint,
+            ega_join_handles: vec![ega_jh],
+        }
+    }
 
-                let (egt_sender, egt_receiver) = bounded(1);
+    pub fn run(mut self) -> anyhow::Result<()> {
+        loop {
+            match self.rx.recv() {
+                Ok(Msg::LoadMoreEvents { until_duration }) => {
+                    let new_events = self.ega.get_events(until_duration)?;
+                    let mut events = self.events.lock().unwrap();
 
-                let mut egt = new_event_generator_thread(&entrypoint);
-                egt.ready.recv()?;
-
-                let events = events_for_thread;
-
-                // TODO: lotta unwrap in this loop!
-                loop {
-                    match action_rx.recv() {
-                        Ok(Action::GetEvents { until_duration }) => {
-                            egt.sender.send(TAction::GetEvents {
-                                until_duration,
-                                sender: egt_sender.clone(),
-                            })?;
-
-                            let new_events = egt_receiver.recv()??;
-                            let mut events = events.lock().unwrap();
-
-                            for event in new_events {
-                                events.push_back(event);
-                            }
-                        }
-
-                        Ok(Action::ReloadFromNextMarker) => {
-                            // start initializing a new event generator
-                            let new_egt = new_event_generator_thread(&entrypoint);
-
-                            // where is the marker? truncate data.
-                            {
-                                let mut evs = events.lock().unwrap();
-
-                                let marker_index =
-                                    evs.iter().position(|e| matches!(e, Event::Marker));
-
-                                match marker_index {
-                                    Some(i) => evs.truncate(i),
-
-                                    // if there is no marker, we should queue events until we do.
-                                    None => todo!(),
-                                }
-                            }
-
-                            // replace the event generator
-                            {
-                                new_egt.ready.recv()?;
-                                let old_egt = egt;
-                                egt = new_egt;
-                                drop(old_egt);
-                            }
-                        }
-
-                        Ok(Action::Exit) => break,
-
-                        Err(RecvError) => {
-                            warn!("could not receive action");
-                            break;
-                        }
+                    for event in new_events {
+                        events.push_back(event);
                     }
                 }
 
-                debug!("Event thread ended");
+                Ok(Msg::ReloadFromNextMarker) => {
+                    // start initializing a new event generator
+                    let (new_ega, new_ega_jh) = new_event_generator_actor(&self.entrypoint);
+                    self.ega_join_handles.push(new_ega_jh);
 
-                Ok(())
-            })?;
+                    // where is the marker? truncate data.
+                    {
+                        let mut evs = self.events.lock().unwrap();
+                        let marker_index = evs.iter().position(|e| matches!(e, Event::Marker));
 
-        return Ok(EventThread {
-            handle,
-            action_tx,
-            events,
-        });
+                        match marker_index {
+                            Some(i) => evs.truncate(i),
+
+                            // if there is no marker, we should queue events until we do.
+                            None => todo!(),
+                        }
+                    }
+
+                    // replace the event generator
+                    {
+                        let old_ega = self.ega;
+                        self.ega = new_ega;
+
+                        // TODO: old_ega is probably going to get
+                        // dropped here. slow if dropping v8 instance
+                        // is slow?
+                        old_ega.exit()?;
+                    }
+                }
+
+                Ok(Msg::Exit) => break,
+
+                Err(RecvError) => {
+                    warn!("could not receive action");
+                    break;
+                }
+            }
+        }
+
+        self.ega.exit()?;
+
+        for jh in self.ega_join_handles {
+            jh.join().unwrap()?;
+        }
+
+        Ok(())
+    }
+}
+
+pub fn new_event_coordinator(
+    entrypoint: &Path,
+) -> (EventCoordinatorActorHandle, JoinHandle<anyhow::Result<()>>) {
+    let (tx, rx) = unbounded();
+    let ega = EventCoordinatorActor::new(entrypoint.to_path_buf(), rx);
+    let events = ega.events.clone();
+
+    let jh = spawn(move || -> Result<(), anyhow::Error> {
+        debug!("Event thread started");
+        ega.run()?;
+        debug!("Event thread ended");
+        Ok(())
+    });
+
+    let handle = EventCoordinatorActorHandle { tx, events };
+
+    (handle, jh)
+}
+
+#[derive(Clone)]
+pub struct EventCoordinatorActorHandle {
+    tx: Sender<Msg>,
+    events: Arc<Mutex<VecDeque<Event>>>,
+}
+
+impl EventCoordinatorActorHandle {
+    pub fn load_more_events(&self, until_duration: Duration) -> anyhow::Result<()> {
+        self.tx.send(Msg::LoadMoreEvents { until_duration })?;
+        Ok(())
     }
 
-    pub fn exit(&self) -> Result<(), anyhow::Error> {
-        self.action_tx
-            .send(Action::Exit)
-            .map_err(anyhow::Error::new)
+    pub fn reload_from_next_marker(&self) -> anyhow::Result<()> {
+        self.tx.send(Msg::ReloadFromNextMarker)?;
+        Ok(())
     }
 
-    pub fn load_more_events(&self, until_duration: Duration) -> Result<(), anyhow::Error> {
-        self.action_tx
-            .send(Action::GetEvents { until_duration })
-            .map_err(anyhow::Error::new)
-    }
-
-    pub fn reload_from_next_marker(&self) -> Result<(), anyhow::Error> {
-        self.action_tx
-            .send(Action::ReloadFromNextMarker)
-            .map_err(anyhow::Error::new)
+    pub fn exit(&self) -> anyhow::Result<()> {
+        self.tx.send(Msg::Exit)?;
+        Ok(())
     }
 }
 
 const REQUEST_MORE_WHEN_COUNT_UNDER: usize = 100;
+const REQUEST_FOR_DURATION: Duration = Duration::from_secs(1);
 
-impl PlayerEventSource for EventThread {
+impl PlayerEventSource for EventCoordinatorActorHandle {
     fn next(&self) -> Option<Event> {
         let need_mode;
         let event;
@@ -144,55 +160,10 @@ impl PlayerEventSource for EventThread {
         }
 
         if need_mode {
-            self.load_more_events(Duration::from_millis(1000)).unwrap()
+            self.load_more_events(REQUEST_FOR_DURATION)
+                .expect("Could not request for more events");
         }
 
         event
-    }
-}
-
-enum TAction {
-    GetEvents {
-        until_duration: Duration,
-        sender: Sender<Result<Vec<Event>, anyhow::Error>>,
-    },
-}
-
-struct NewEventGeneratorResult {
-    sender: Sender<TAction>,
-    ready: Receiver<()>,
-}
-
-fn new_event_generator_thread(entrypoint: &Path) -> NewEventGeneratorResult {
-    let entrypoint = entrypoint.to_path_buf();
-    let (action_tx, action_rx) = bounded::<TAction>(1);
-    let (ready_sender, ready_receiver) = bounded::<()>(1);
-
-    spawn(move || -> anyhow::Result<()> {
-        debug!("Event generator thread started, creating event generator");
-        let mut event_generator = EventGenerator::create(&entrypoint)?;
-
-        debug!("Event generator created");
-        ready_sender.send(())?;
-
-        for e in action_rx.iter() {
-            match e {
-                TAction::GetEvents {
-                    until_duration,
-                    sender,
-                } => {
-                    let new_events = event_generator.request_notes(until_duration);
-                    sender.send(new_events)?;
-                }
-            }
-        }
-
-        debug!("Event generator thread exited");
-        Ok(())
-    });
-
-    NewEventGeneratorResult {
-        sender: action_tx,
-        ready: ready_receiver,
     }
 }

@@ -1,51 +1,47 @@
-use std::{
-    thread::yield_now,
-    time::{Duration, Instant},
-};
-
-use crossbeam::channel::{bounded, Receiver, Sender, TryRecvError};
+use crate::event::{AllNotesOff, Event};
+use crossbeam::channel::{unbounded, Receiver, Sender, TryRecvError};
 use log::{debug, info};
 use midir::MidiOutputConnection;
+use std::{
+    thread::{spawn, yield_now, JoinHandle},
+    time::{Duration, Instant},
+};
+use thread_priority::{set_current_thread_priority, ThreadPriority, ThreadPriorityValue};
 
-use crate::event::{AllNotesOff, Event};
-
-pub enum PlayerCtrlEvent {
+pub enum Msg {
     Exit,
 }
 
-pub struct Player<'a, T: PlayerEventSource> {
-    pub player_event_source: &'a T,
+pub struct PlayerActor<T: PlayerEventSource> {
+    pub player_event_source: T,
     pub midi_output_connection: MidiOutputConnection,
-    pub ctrl_receiver: Receiver<PlayerCtrlEvent>,
+    pub ctrl_receiver: Receiver<Msg>,
 
     // internal player state
     first_event_instant: Option<Instant>,
     should_have_elapsed: Duration,
 }
 
-impl<'a, T: PlayerEventSource> Player<'a, T> {
+impl<T: PlayerEventSource> PlayerActor<T> {
     pub fn new(
-        player_event_source: &'a T,
+        player_event_source: T,
         midi_output_connection: MidiOutputConnection,
-    ) -> (Sender<PlayerCtrlEvent>, Self) {
-        let (tx, rx) = bounded(128);
-
-        let player = Player {
+        rx: Receiver<Msg>,
+    ) -> Self {
+        PlayerActor {
             player_event_source,
             ctrl_receiver: rx,
             midi_output_connection,
 
             first_event_instant: None,
             should_have_elapsed: Duration::ZERO,
-        };
-
-        (tx, player)
+        }
     }
 
-    pub fn run(&mut self) -> anyhow::Result<()> {
+    pub fn run(mut self) -> anyhow::Result<()> {
         loop {
             match self.ctrl_receiver.try_recv() {
-                Ok(PlayerCtrlEvent::Exit) => break,
+                Ok(Msg::Exit) => break,
                 Err(TryRecvError::Empty) => (),
                 Err(TryRecvError::Disconnected) => {
                     return Err(anyhow::anyhow!("UI receiver disconnected"))
@@ -104,7 +100,49 @@ impl<'a, T: PlayerEventSource> Player<'a, T> {
     }
 }
 
-impl<'a, T: PlayerEventSource> Drop for Player<'a, T> {
+pub fn new_player_actor<T: PlayerEventSource + Send + 'static>(
+    player_event_source: T,
+    midi_output_connection: MidiOutputConnection,
+) -> (PlayerActorHandle, JoinHandle<anyhow::Result<()>>) {
+    let (tx, rx) = unbounded();
+    let player = PlayerActor::new(player_event_source, midi_output_connection, rx);
+
+    let jh = spawn(move || -> anyhow::Result<()> {
+        debug!("Player thread started");
+
+        set_current_thread_priority(get_player_thread_priority())
+            .map_err(|e| anyhow::anyhow!("Could not set thread priority {:?}", e))?;
+
+        player.run()?;
+
+        debug!("Player thread exited");
+
+        Ok(())
+    });
+
+    let handle = PlayerActorHandle { tx };
+
+    (handle, jh)
+}
+
+fn get_player_thread_priority() -> ThreadPriority {
+    let thread_priority_value: ThreadPriorityValue = 40.try_into().unwrap();
+    ThreadPriority::Crossplatform(thread_priority_value)
+}
+
+#[derive(Clone)]
+pub struct PlayerActorHandle {
+    tx: Sender<Msg>,
+}
+
+impl PlayerActorHandle {
+    pub fn exit(&self) -> anyhow::Result<()> {
+        self.tx.send(Msg::Exit)?;
+        Ok(())
+    }
+}
+
+impl<T: PlayerEventSource> Drop for PlayerActor<T> {
     fn drop(&mut self) {
         debug!("Sending all notes off signal");
 

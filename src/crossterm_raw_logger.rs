@@ -1,14 +1,16 @@
 use std::{
-    io::{stdout, Stdout, Write},
+    io::{stdout, Stdout},
     sync::Mutex,
 };
 
 use crossterm::{
     cursor::{MoveTo, MoveToColumn},
+    execute,
+    style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{self, ScrollUp},
     ExecutableCommand,
 };
-use log::{LevelFilter, Log, Metadata, Record, SetLoggerError};
+use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
 
 pub struct CrosstermRawLogger {
     stdout: Mutex<Stdout>,
@@ -44,10 +46,32 @@ impl Log for CrosstermRawLogger {
 
     fn log(&self, record: &Record) {
         let mut stdout = self.stdout.lock().unwrap();
-        stdout.write_fmt(*record.args()).unwrap();
-        stdout.execute(ScrollUp(1)).unwrap();
-        stdout.execute(MoveToColumn(0)).unwrap();
+
+        execute!(
+            stdout,
+            SetForegroundColor(Color::DarkGrey),
+            Print(record.module_path().unwrap_or("")),
+            Print(" "),
+            SetForegroundColor(level_to_color(record.level())),
+            Print(record.level()),
+            Print(" "),
+            ResetColor,
+            Print(*record.args()),
+            ScrollUp(1),
+            MoveToColumn(0)
+        )
+        .unwrap();
     }
 
     fn flush(&self) {}
+}
+
+fn level_to_color(level: Level) -> Color {
+    match level {
+        Level::Info => Color::Green,
+        Level::Warn => Color::Yellow,
+        Level::Error => Color::Red,
+        Level::Debug => Color::Cyan,
+        Level::Trace => Color::Magenta,
+    }
 }
