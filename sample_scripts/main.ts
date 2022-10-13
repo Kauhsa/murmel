@@ -1,19 +1,5 @@
-type Event =
-    | {
-          type: 'NoteOn'
-          note: number
-      }
-    | {
-          type: 'Wait'
-          duration: number
-      }
-    | {
-          type: 'NoteOff'
-          note: number
-      }
-    | {
-          type: 'Marker'
-      }
+import { Event } from './stdlib'
+import { Note } from './tonal/tonal.js'
 
 const note = function* (note: number, duration: number): Generator<Event> {
     yield { type: 'NoteOn', note }
@@ -22,8 +8,8 @@ const note = function* (note: number, duration: number): Generator<Event> {
 }
 
 const generator = function* (): Generator<Event> {
-    let base = 3
-    let dur = 100
+    let base = Note.midi('C4')!
+    let dur = 250
 
     while (true) {
         yield { type: 'Marker' }
@@ -34,4 +20,6 @@ const generator = function* (): Generator<Event> {
     }
 }
 
-export default generator()
+const res: Iterator<Event> = generator()
+
+export default res

@@ -176,8 +176,10 @@ impl PlayerEventSource for EventCoordinatorActorHandle {
         }
 
         if need_mode {
-            self.load_more_events(REQUEST_FOR_DURATION)
-                .expect("Could not request for more events");
+            match self.load_more_events(REQUEST_FOR_DURATION) {
+                Err(e) => warn!("Could not request for more events: {:?}", e),
+                _ => (),
+            }
         }
 
         event
