@@ -65,7 +65,7 @@ impl<T: PlayerEventSource> PlayerActor<T> {
             self.first_event_instant = Some(Instant::now())
         }
 
-        debug!("Event: {:?}", event);
+        debug!("Next event: {:?}", event);
 
         match &event {
             Event::NoteOn(e) => self.send_to_midi(&e.to_midi_msg())?,

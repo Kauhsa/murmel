@@ -4,6 +4,7 @@ mod event_coordinator;
 mod event_generator;
 mod event_generator_thread;
 mod player;
+mod ts_module_loader;
 
 use crate::crossterm_raw_logger::CrosstermRawLogger;
 use crate::event_coordinator::new_event_coordinator;
@@ -22,7 +23,7 @@ pub enum UiEvent {
     Exit,
 }
 
-const ENTRYPOINT: &str = "./samples/test.js";
+const ENTRYPOINT: &str = "./samples/test.ts";
 
 fn main() -> anyhow::Result<()> {
     enable_raw_mode()?;

@@ -1,4 +1,4 @@
-use crate::event::Event;
+use crate::{event::Event, ts_module_loader::TypescriptModuleLoader};
 
 use std::{path::Path, rc::Rc, time::Duration};
 
@@ -7,7 +7,7 @@ use deno_core::{
     serde_v8,
     url::Url,
     v8::{self, HandleScope},
-    FsModuleLoader, JsRuntime, ModuleId, RuntimeOptions,
+    JsRuntime, ModuleId, RuntimeOptions,
 };
 use log::{debug, info};
 use serde::Deserialize;
@@ -27,7 +27,7 @@ impl EventGenerator {
         info!("Initializing JS runtime");
 
         let mut js_runtime = JsRuntime::new(RuntimeOptions {
-            module_loader: Some(Rc::new(FsModuleLoader {})),
+            module_loader: Some(Rc::new(TypescriptModuleLoader)),
             ..Default::default()
         });
 
