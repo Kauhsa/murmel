@@ -40,8 +40,6 @@ fn run() -> anyhow::Result<()> {
         .create_virtual("Virtual port")
         .map_err(|e| anyhow!("Could not create midi port: {:?}", e))?;
 
-    /* event thread */
-
     let entrypoint = fs::canonicalize(ENTRYPOINT)?;
     let (event_coordinator, event_coordinator_jh) = new_event_coordinator(&entrypoint);
     let (player, player_jh) = new_player_actor(event_coordinator.clone(), midi_output_connection);

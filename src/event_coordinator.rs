@@ -21,6 +21,7 @@ struct EventCoordinatorActor {
     ega_join_handles: Vec<JoinHandle<anyhow::Result<()>>>,
 }
 
+#[derive(Debug)]
 pub enum Msg {
     LoadMoreEvents { until_duration: Duration },
     ReloadFromNextMarker,
@@ -43,59 +44,74 @@ impl EventCoordinatorActor {
 
     pub fn run(mut self) -> anyhow::Result<()> {
         loop {
-            match self.rx.recv() {
-                Ok(Msg::LoadMoreEvents { until_duration }) => {
-                    let new_events = self.ega.get_events(until_duration)?;
-                    let mut events = self.events.lock().unwrap();
+            let e = self.rx.recv();
 
-                    for event in new_events {
-                        events.push_back(event);
-                    }
+            debug!("Received event {:?}", e);
+
+            match e {
+                Ok(Msg::LoadMoreEvents { until_duration }) => {
+                    self.load_more_events(until_duration)?
                 }
 
                 Ok(Msg::ReloadFromNextMarker) => {
-                    // start initializing a new event generator
-                    let (new_ega, new_ega_jh) = new_event_generator_actor(&self.entrypoint);
-                    self.ega_join_handles.push(new_ega_jh);
-
-                    // where is the marker? truncate data.
-                    {
-                        let mut evs = self.events.lock().unwrap();
-                        let marker_index = evs.iter().position(|e| matches!(e, Event::Marker));
-
-                        match marker_index {
-                            Some(i) => evs.truncate(i),
-
-                            // if there is no marker, we should queue events until we do.
-                            None => todo!(),
-                        }
-                    }
-
-                    // replace the event generator
-                    {
-                        let old_ega = self.ega;
-                        self.ega = new_ega;
-
-                        // TODO: old_ega is probably going to get
-                        // dropped here. slow if dropping v8 instance
-                        // is slow?
-                        old_ega.exit()?;
-                    }
+                    self = self.reload_from_next_marker()?;
                 }
 
                 Ok(Msg::Exit) => break,
 
                 Err(RecvError) => {
-                    warn!("could not receive action");
+                    warn!("Channel broken");
                     break;
                 }
             }
         }
 
+        // send exit signal to current event generator, otherwise we won't ever
+        // be able to join
         self.ega.exit()?;
 
         for jh in self.ega_join_handles {
             jh.join().unwrap()?;
+        }
+
+        Ok(())
+    }
+
+    fn reload_from_next_marker(mut self) -> Result<Self, anyhow::Error> {
+        let (new_ega, new_ega_jh) = new_event_generator_actor(&self.entrypoint);
+        self.ega_join_handles.push(new_ega_jh);
+
+        {
+            let mut evs = self.events.lock().unwrap();
+            let marker_index = evs.iter().position(|e| matches!(e, Event::Marker));
+
+            match marker_index {
+                Some(i) => evs.truncate(i),
+
+                // if there is no marker, we should queue events until we do.
+                None => todo!(),
+            }
+        }
+
+        {
+            let old_ega = self.ega;
+            self.ega = new_ega;
+
+            // TODO: old_ega is probably going to get
+            // dropped here. slow if dropping v8 instance
+            // is slow?
+            old_ega.exit()?;
+        }
+
+        Ok(self)
+    }
+
+    pub fn load_more_events(&self, until_duration: Duration) -> anyhow::Result<()> {
+        let new_events = self.ega.get_events(until_duration)?;
+        let mut events = self.events.lock().unwrap();
+
+        for event in new_events {
+            events.push_back(event);
         }
 
         Ok(())

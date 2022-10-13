@@ -1,9 +1,9 @@
 use crate::event::{AllNotesOff, Event};
 use crossbeam::channel::{unbounded, Receiver, Sender, TryRecvError};
-use log::{debug, info};
+use log::{debug, info, warn};
 use midir::MidiOutputConnection;
 use std::{
-    thread::{spawn, yield_now, JoinHandle},
+    thread::{spawn, JoinHandle},
     time::{Duration, Instant},
 };
 use thread_priority::{set_current_thread_priority, ThreadPriority, ThreadPriorityValue};
@@ -15,7 +15,7 @@ pub enum Msg {
 pub struct PlayerActor<T: PlayerEventSource> {
     pub player_event_source: T,
     pub midi_output_connection: MidiOutputConnection,
-    pub ctrl_receiver: Receiver<Msg>,
+    pub rx: Receiver<Msg>,
 
     // internal player state
     first_event_instant: Option<Instant>,
@@ -30,8 +30,8 @@ impl<T: PlayerEventSource> PlayerActor<T> {
     ) -> Self {
         PlayerActor {
             player_event_source,
-            ctrl_receiver: rx,
             midi_output_connection,
+            rx,
 
             first_event_instant: None,
             should_have_elapsed: Duration::ZERO,
@@ -40,7 +40,7 @@ impl<T: PlayerEventSource> PlayerActor<T> {
 
     pub fn run(mut self) -> anyhow::Result<()> {
         loop {
-            match self.ctrl_receiver.try_recv() {
+            match self.rx.try_recv() {
                 Ok(Msg::Exit) => break,
                 Err(TryRecvError::Empty) => (),
                 Err(TryRecvError::Disconnected) => {
@@ -50,7 +50,10 @@ impl<T: PlayerEventSource> PlayerActor<T> {
 
             match self.player_event_source.next() {
                 Some(event) => self.process_new_event(event)?,
-                None => yield_now(), // TODO: don't busy-wait.
+                None => {
+                    warn!("No event available to process yet, wait a bit...");
+                    spin_sleep::sleep(Duration::from_millis(100));
+                }
             }
         }
 
