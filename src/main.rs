@@ -23,7 +23,7 @@ pub enum UiEvent {
     Exit,
 }
 
-const ENTRYPOINT: &str = "./samples/test.ts";
+const ENTRYPOINT: &str = "./sample_scripts/main.ts";
 
 fn main() -> anyhow::Result<()> {
     enable_raw_mode()?;
