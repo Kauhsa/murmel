@@ -1,12 +1,12 @@
 mod crossterm_raw_logger;
 mod event;
+mod event_coordinator;
 mod event_generator;
 mod event_generator_thread;
-mod event_thread;
 mod player;
 
 use crate::crossterm_raw_logger::CrosstermRawLogger;
-use crate::event_thread::new_event_coordinator;
+use crate::event_coordinator::new_event_coordinator;
 use crate::player::new_player_actor;
 use anyhow::anyhow;
 use crossterm::event::{poll, read, Event, KeyCode, KeyModifiers};

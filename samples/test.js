@@ -5,8 +5,8 @@ const note = function* (note, duration) {
 }
 
 const generator = function* () {
-    let base = 20;
-    let dur = 250;
+    let base = 2;
+    let dur = 100;
 
     while (true) {
         yield { type: 'Marker'}
