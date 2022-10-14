@@ -57,15 +57,19 @@ impl<T: PlayerEventSource> PlayerActor<T> {
                 Ok(Msg::Exit) => break,
 
                 Ok(Msg::Play) => {
-                    info!("Starting playing");
-                    self.player_status = PlayerStatus::Playing;
+                    if !matches!(self.player_status, PlayerStatus::Playing) {
+                        info!("Starting playing");
+                        self.player_status = PlayerStatus::Playing;
+                    }
                 }
 
                 Ok(Msg::Stop) => {
-                    info!("Stopping playing");
-                    self.first_event_instant = None;
-                    self.should_have_elapsed = Duration::ZERO;
-                    self.player_status = PlayerStatus::Stopped;
+                    if !matches!(self.player_status, PlayerStatus::Stopped) {
+                        info!("Stopping playing");
+                        self.first_event_instant = None;
+                        self.should_have_elapsed = Duration::ZERO;
+                        self.player_status = PlayerStatus::Stopped;
+                    }
                 }
 
                 Err(TryRecvError::Empty) => (),

@@ -12,8 +12,8 @@ const generator = function* (): Generator<Event> {
     let bpm = 120
 
     while (true) {
-        yield { type: 'ChangeBpm', bpm }
         yield { type: 'Marker' }
+        yield { type: 'ChangeBpm', bpm }
         yield* note(base, 0.25)
         yield* note(base, 0.25)
         yield* note(base, 0.25)

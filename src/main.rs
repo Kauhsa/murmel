@@ -12,7 +12,7 @@ use crate::player::new_player_actor;
 use anyhow::anyhow;
 use crossterm::event::{poll, read, Event, KeyCode, KeyModifiers};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use log::{debug, info};
+use log::{debug, info, LevelFilter};
 use midir::os::unix::VirtualOutput;
 use midir::MidiOutput;
 use std::time::Duration;
@@ -27,6 +27,7 @@ const ENTRYPOINT: &str = "./sample_scripts/main.ts";
 
 fn main() -> anyhow::Result<()> {
     enable_raw_mode()?;
+    log::set_max_level(LevelFilter::Info);
     CrosstermRawLogger::init()?;
     let _ = panic::catch_unwind(run);
     disable_raw_mode()?;
@@ -41,11 +42,13 @@ fn run() -> anyhow::Result<()> {
         .create_virtual("Virtual port")
         .map_err(|e| anyhow!("Could not create midi port: {:?}", e))?;
 
+    info!("Connected to MIDI output");
+
     let entrypoint = fs::canonicalize(ENTRYPOINT)?;
     let (event_coordinator, event_coordinator_jh) = new_event_coordinator(&entrypoint);
     let (player, player_jh) = new_player_actor(event_coordinator.clone(), midi_output_connection);
 
-    /* ui events  */
+    info!("Press \"p\" to start playing!");
 
     while !player_jh.is_finished() {
         if !poll(Duration::from_millis(100))? {
@@ -88,7 +91,7 @@ fn run() -> anyhow::Result<()> {
 
     player_jh.join().unwrap()?;
     event_coordinator_jh.join().unwrap()?;
-    debug!("Stopped!");
+    info!("Stopped!");
 
     Ok(())
 }

@@ -10,7 +10,7 @@ use crossterm::{
     terminal::{self, ScrollUp},
     ExecutableCommand,
 };
-use log::{warn, Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
+use log::{warn, Level, Log, Metadata, Record, SetLoggerError};
 
 pub struct CrosstermRawLogger {
     stdout: Mutex<Stdout>,
@@ -34,7 +34,6 @@ impl CrosstermRawLogger {
             stdout.execute(MoveTo(0, height)).unwrap();
         }
 
-        log::set_max_level(LevelFilter::Debug);
         log::set_boxed_logger(Box::new(logger))
     }
 }
