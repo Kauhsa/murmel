@@ -12,7 +12,7 @@ use crate::player::new_player_actor;
 use anyhow::anyhow;
 use crossterm::event::{poll, read, Event, KeyCode, KeyModifiers};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use log::{debug, info, LevelFilter};
+use log::{info, LevelFilter};
 use midir::os::unix::VirtualOutput;
 use midir::MidiOutput;
 use std::time::Duration;
