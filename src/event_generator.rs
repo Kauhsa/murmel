@@ -1,6 +1,6 @@
 use crate::{event::Event, ts_module_loader::TypescriptModuleLoader};
 
-use std::{path::Path, rc::Rc, time::Duration};
+use std::{path::Path, rc::Rc};
 
 use anyhow::anyhow;
 use deno_core::{
@@ -23,6 +23,11 @@ pub struct EventGenerator {
 pub struct RequestNotesResult {
     pub events: Vec<Event>,
     pub has_more: bool,
+}
+
+#[derive(Debug)]
+pub struct RequestNotesParams {
+    pub max_count: u32,
 }
 
 impl EventGenerator {
@@ -54,7 +59,7 @@ impl EventGenerator {
 
     pub fn request_notes(
         &mut self,
-        until_duration: Duration,
+        params: RequestNotesParams,
     ) -> Result<RequestNotesResult, anyhow::Error> {
         let module = self.js_runtime.get_module_namespace(self.module_id)?;
         let isolate = self.js_runtime.v8_isolate();
@@ -64,12 +69,11 @@ impl EventGenerator {
         let default_str = v8::String::new(scope, "default").unwrap();
         let default_export = val.get(scope, default_str.into()).unwrap();
 
-        let mut dur = Duration::ZERO;
-
+        let mut count = 0;
         let mut events = vec![];
         let mut has_more = true;
 
-        while dur < until_duration {
+        while count < params.max_count {
             let EventGeneratorResult { done, value } =
                 call_generator_function(scope, default_export)?;
 
@@ -80,14 +84,11 @@ impl EventGenerator {
 
             match value {
                 Some(event) => {
-                    if let Event::Wait(wait_event) = &event {
-                        dur += Duration::from_secs_f32(wait_event.duration / 1000.0)
-                    }
-
+                    count += 1;
                     events.push(event)
                 }
                 None => {
-                    debug!("No event, even though iterable is done")
+                    debug!("No event, even though iterable is not done")
                 }
             }
         }

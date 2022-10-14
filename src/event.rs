@@ -1,8 +1,16 @@
 use deno_core::serde::Deserialize;
 
-/** beats? milliseconds? dunno yet. */
-pub type NoteDuration = f32;
+pub type Ticks = u32;
 pub type NoteValue = u8;
+pub type Bpm = u16;
+
+// some highly composable number.
+pub const TICKS_PER_BEAT: Ticks = 55440;
+
+#[derive(Deserialize, Debug)]
+pub struct ChangeBpm {
+    pub bpm: Bpm,
+}
 
 #[derive(Deserialize, Debug)]
 pub struct NoteOn {
@@ -37,7 +45,7 @@ impl AllNotesOff {
 
 #[derive(Deserialize, Debug)]
 pub struct Wait {
-    pub duration: NoteDuration,
+    pub ticks: Ticks,
 }
 
 #[derive(Deserialize, Debug)]
@@ -47,6 +55,7 @@ pub enum Event {
     NoteOff(NoteOff),
     Wait(Wait),
     AllNotesOff(AllNotesOff),
+    ChangeBpm(ChangeBpm),
     Print { value: String },
     Marker,
 }

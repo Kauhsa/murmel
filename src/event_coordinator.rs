@@ -1,6 +1,7 @@
 use crate::{
     crossterm_raw_logger::LogErr,
     event::Event,
+    event_generator::RequestNotesParams,
     event_generator_thread::{new_event_generator_actor, EventGeneratorActorHandle},
     player::PlayerEventSource,
 };
@@ -12,11 +13,10 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread::{spawn, JoinHandle},
-    time::Duration,
 };
 
 const REQUEST_MORE_WHEN_COUNT_UNDER: usize = 100;
-const REQUEST_FOR_DURATION: Duration = Duration::from_secs(1);
+const REQUEST_PARAMS: RequestNotesParams = RequestNotesParams { max_count: 1000 };
 
 struct EventCoordinatorActor {
     entrypoint: PathBuf,
@@ -28,7 +28,7 @@ struct EventCoordinatorActor {
 
 #[derive(Debug)]
 pub enum Msg {
-    LoadMoreEvents { until_duration: Duration },
+    LoadMoreEvents { params: RequestNotesParams },
     ReloadFromNextMarker,
     Exit,
 }
@@ -57,7 +57,7 @@ impl EventCoordinatorActor {
             ega_join_handles,
         };
 
-        ega.load_more_events(REQUEST_FOR_DURATION)
+        ega.load_more_events(REQUEST_PARAMS)
     }
 
     pub fn run(mut self) -> anyhow::Result<()> {
@@ -67,8 +67,8 @@ impl EventCoordinatorActor {
             debug!("Received event {:?}", e);
 
             match e {
-                Ok(Msg::LoadMoreEvents { until_duration }) => {
-                    self = self.load_more_events(until_duration);
+                Ok(Msg::LoadMoreEvents { params }) => {
+                    self = self.load_more_events(params);
                 }
 
                 Ok(Msg::ReloadFromNextMarker) => {
@@ -140,13 +140,13 @@ impl EventCoordinatorActor {
         }
 
         // get immediately some new events to the system!
-        self.load_more_events(REQUEST_FOR_DURATION)
+        self.load_more_events(REQUEST_PARAMS)
     }
 
-    fn load_more_events(self, until_duration: Duration) -> Self {
+    fn load_more_events(self, params: RequestNotesParams) -> Self {
         match &self.ega {
             Some(ega) => {
-                match ega.get_events(until_duration) {
+                match ega.get_events(params) {
                     Ok(res) => {
                         let mut events = self.events.lock().unwrap();
 
@@ -209,8 +209,8 @@ pub struct EventCoordinatorActorHandle {
 }
 
 impl EventCoordinatorActorHandle {
-    pub fn load_more_events(&self, until_duration: Duration) -> anyhow::Result<()> {
-        self.tx.send(Msg::LoadMoreEvents { until_duration })?;
+    pub fn load_more_events(&self, params: RequestNotesParams) -> anyhow::Result<()> {
+        self.tx.send(Msg::LoadMoreEvents { params })?;
         Ok(())
     }
 
@@ -238,7 +238,7 @@ impl PlayerEventSource for EventCoordinatorActorHandle {
         }
 
         if need_mode {
-            match self.load_more_events(REQUEST_FOR_DURATION) {
+            match self.load_more_events(REQUEST_PARAMS) {
                 Err(e) => warn!("Could not request for more events: {:?}", e),
                 _ => (),
             }

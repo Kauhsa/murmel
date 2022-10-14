@@ -38,9 +38,15 @@ impl ModuleLoader for TypescriptModuleLoader {
     ) -> Pin<Box<ModuleSourceFuture>> {
         let module_specifier = module_specifier.clone();
         async move {
-            let path = module_specifier
+            let mut path = module_specifier
                 .to_file_path()
                 .map_err(|_| anyhow!("Only file: URLs are supported."))?;
+
+            // a hack until https://github.com/microsoft/TypeScript/issues/37582
+            // moves somewhere.
+            if let None = path.extension() {
+                path = path.with_extension("ts")
+            }
 
             let media_type = MediaType::from(&path);
             let (module_type, should_transpile) = match MediaType::from(&path) {

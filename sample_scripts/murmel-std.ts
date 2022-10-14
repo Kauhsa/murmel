@@ -5,7 +5,7 @@ export type Event =
       }
     | {
           type: 'Wait'
-          duration: number
+          ticks: number
       }
     | {
           type: 'NoteOff'
@@ -14,3 +14,9 @@ export type Event =
     | {
           type: 'Marker'
       }
+    | {
+          type: 'ChangeBpm'
+          bpm: number
+      }
+
+export const TICKS_PER_BEAT = 55440

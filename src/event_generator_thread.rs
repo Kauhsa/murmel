@@ -1,15 +1,14 @@
-use crate::event_generator::{EventGenerator, RequestNotesResult};
+use crate::event_generator::{EventGenerator, RequestNotesParams, RequestNotesResult};
 use crossbeam::channel::{bounded, unbounded, Sender};
 use log::debug;
 use std::{
     path::Path,
     thread::{spawn, JoinHandle},
-    time::Duration,
 };
 
 enum Msg {
     GetEvents {
-        until_duration: Duration,
+        params: RequestNotesParams,
         sndr: Sender<Result<RequestNotesResult, anyhow::Error>>,
     },
 
@@ -42,11 +41,8 @@ pub fn new_event_generator_actor(
         debug!("Event generator created");
         for e in rx.iter() {
             match e {
-                Msg::GetEvents {
-                    until_duration,
-                    sndr,
-                } => {
-                    let _ = sndr.send(event_generator.request_notes(until_duration));
+                Msg::GetEvents { params, sndr } => {
+                    let _ = sndr.send(event_generator.request_notes(params));
                 }
 
                 Msg::Exit => break,
@@ -67,14 +63,9 @@ pub struct EventGeneratorActorHandle {
 }
 
 impl EventGeneratorActorHandle {
-    pub fn get_events(&self, until_duration: Duration) -> anyhow::Result<RequestNotesResult> {
+    pub fn get_events(&self, params: RequestNotesParams) -> anyhow::Result<RequestNotesResult> {
         let (tx, rx) = bounded(0);
-
-        self.tx.send(Msg::GetEvents {
-            until_duration,
-            sndr: tx,
-        })?;
-
+        self.tx.send(Msg::GetEvents { params, sndr: tx })?;
         rx.recv()?
     }
 

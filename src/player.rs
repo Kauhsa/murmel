@@ -1,4 +1,4 @@
-use crate::event::{AllNotesOff, Event};
+use crate::event::{AllNotesOff, Bpm, Event, Ticks, TICKS_PER_BEAT};
 use crossbeam::channel::{unbounded, Receiver, Sender, TryRecvError};
 use log::{debug, info, warn};
 use midir::MidiOutputConnection;
@@ -19,12 +19,15 @@ pub enum PlayerStatus {
     Playing,
 }
 
+const BEAT_IN_120_BPM: Duration = Duration::from_millis(500);
+
 pub struct PlayerActor<T: PlayerEventSource> {
     pub player_event_source: T,
     pub midi_output_connection: MidiOutputConnection,
     pub rx: Receiver<Msg>,
 
     // internal player state
+    current_bpm: Bpm,
     first_event_instant: Option<Instant>,
     should_have_elapsed: Duration,
     player_status: PlayerStatus,
@@ -41,6 +44,7 @@ impl<T: PlayerEventSource> PlayerActor<T> {
             midi_output_connection,
             rx,
 
+            current_bpm: 120,
             first_event_instant: None,
             should_have_elapsed: Duration::ZERO,
             player_status: PlayerStatus::Stopped,
@@ -105,7 +109,9 @@ impl<T: PlayerEventSource> PlayerActor<T> {
             Event::Print { value } => info!("Print: {}", value),
 
             Event::Wait(e) => {
-                self.should_have_elapsed += Duration::from_secs_f32(e.duration / 1000.0);
+                let duration = self.ticks_to_duration(e.ticks);
+
+                self.should_have_elapsed += duration;
 
                 let wait_duration = self
                     .should_have_elapsed
@@ -118,6 +124,8 @@ impl<T: PlayerEventSource> PlayerActor<T> {
                 spin_sleep::sleep(wait_duration)
             }
 
+            Event::ChangeBpm(e) => self.current_bpm = e.bpm,
+
             Event::Marker => {}
         }
 
@@ -128,6 +136,13 @@ impl<T: PlayerEventSource> PlayerActor<T> {
         self.midi_output_connection
             .send(&msg)
             .map_err(anyhow::Error::msg)
+    }
+
+    fn ticks_to_duration(&self, ticks: Ticks) -> Duration {
+        let single_tick_duration =
+            (BEAT_IN_120_BPM * 120) / self.current_bpm.into() / TICKS_PER_BEAT;
+
+        single_tick_duration * ticks
     }
 }
 
