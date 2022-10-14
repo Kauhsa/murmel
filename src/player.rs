@@ -97,9 +97,10 @@ impl<T: PlayerEventSource> PlayerActor<T> {
     }
 
     fn process_new_event(&mut self, event: Event) -> anyhow::Result<()> {
-        if self.first_event_instant.is_none() {
-            self.first_event_instant = Some(Instant::now())
-        }
+        let first_event_instant = self
+            .first_event_instant
+            .get_or_insert(Instant::now())
+            .to_owned();
 
         debug!("Next event: {:?}", event);
 
@@ -119,7 +120,7 @@ impl<T: PlayerEventSource> PlayerActor<T> {
 
                 let wait_duration = self
                     .should_have_elapsed
-                    .checked_sub(self.first_event_instant.unwrap().elapsed())
+                    .checked_sub(first_event_instant.elapsed())
                     .unwrap_or(Duration::ZERO);
 
                 debug!("Waiting {:?}", wait_duration);
