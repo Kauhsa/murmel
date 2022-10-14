@@ -1,11 +1,11 @@
 use std::{
-    io::{stdout, Stdout},
+    io::{stdout, Stdout, Write},
     sync::Mutex,
 };
 
 use crossterm::{
     cursor::{MoveTo, MoveToColumn},
-    execute,
+    queue,
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{self, ScrollUp},
     ExecutableCommand,
@@ -46,7 +46,7 @@ impl Log for CrosstermRawLogger {
     fn log(&self, record: &Record) {
         let mut stdout = self.stdout.lock().unwrap();
 
-        execute!(
+        queue!(
             stdout,
             SetForegroundColor(Color::DarkGrey),
             Print(record.module_path().unwrap_or("")),
@@ -54,12 +54,15 @@ impl Log for CrosstermRawLogger {
             SetForegroundColor(level_to_color(record.level())),
             Print(record.level()),
             Print(" "),
-            ResetColor,
-            Print(*record.args()),
-            ScrollUp(1),
-            MoveToColumn(0)
+            ResetColor
         )
         .unwrap();
+
+        for line in record.args().to_string().split('\n') {
+            queue!(stdout, Print(line), ScrollUp(1), MoveToColumn(0)).unwrap();
+        }
+
+        stdout.flush().unwrap();
     }
 
     fn flush(&self) {}

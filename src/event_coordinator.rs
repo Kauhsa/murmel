@@ -44,7 +44,7 @@ impl EventCoordinatorActor {
                 Some(ega)
             }
             Err(e) => {
-                warn!("Could not initialize ega: {:?}", e);
+                warn!("Could not initialize event generator:\n{:?}", e);
                 None
             }
         };
@@ -105,7 +105,7 @@ impl EventCoordinatorActor {
                 ega
             }
             Err(e) => {
-                warn!("Could not initialize new event generator: {:?}", e);
+                warn!("Could not initialize new event generator:\n{:?}", e);
                 return self;
             }
         };
