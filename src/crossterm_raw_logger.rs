@@ -10,7 +10,7 @@ use crossterm::{
     terminal::{self, ScrollUp},
     ExecutableCommand,
 };
-use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
+use log::{warn, Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
 
 pub struct CrosstermRawLogger {
     stdout: Mutex<Stdout>,
@@ -73,5 +73,20 @@ fn level_to_color(level: Level) -> Color {
         Level::Error => Color::Red,
         Level::Debug => Color::Cyan,
         Level::Trace => Color::Magenta,
+    }
+}
+
+pub trait LogErr {
+    fn log_err(&self) -> ();
+}
+
+impl LogErr for Result<(), anyhow::Error> {
+    fn log_err(&self) -> () {
+        match self {
+            Err(e) => {
+                warn!("{:?}", e)
+            }
+            Ok(()) => {}
+        }
     }
 }

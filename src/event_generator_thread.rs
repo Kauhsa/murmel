@@ -1,4 +1,4 @@
-use crate::{event::Event, event_generator::EventGenerator};
+use crate::event_generator::{EventGenerator, RequestNotesResult};
 use crossbeam::channel::{bounded, unbounded, Sender};
 use log::debug;
 use std::{
@@ -10,7 +10,7 @@ use std::{
 enum Msg {
     GetEvents {
         until_duration: Duration,
-        sndr: Sender<Result<Vec<Event>, anyhow::Error>>,
+        sndr: Sender<Result<RequestNotesResult, anyhow::Error>>,
     },
 
     Exit,
@@ -18,32 +18,42 @@ enum Msg {
 
 pub fn new_event_generator_actor(
     entrypoint: &Path,
-) -> (
-    EventGeneratorActorHandle,
-    JoinHandle<Result<(), anyhow::Error>>,
-) {
+    initialized: Sender<anyhow::Result<()>>,
+) -> (EventGeneratorActorHandle, JoinHandle<()>) {
     let entrypoint = entrypoint.to_path_buf();
     let (tx, rx) = unbounded();
 
-    let thread = spawn(move || -> anyhow::Result<()> {
+    let thread = spawn(move || {
         debug!("Event generator thread started, creating event generator");
-        let mut event_generator = EventGenerator::create(&entrypoint)?;
+        let mut event_generator;
+
+        match EventGenerator::create(&entrypoint) {
+            Ok(eg) => {
+                event_generator = eg;
+                let _ = initialized.send(Ok(()));
+            }
+
+            Err(e) => {
+                let _ = initialized.send(Err(e));
+                return;
+            }
+        }
 
         debug!("Event generator created");
-
         for e in rx.iter() {
             match e {
                 Msg::GetEvents {
                     until_duration,
                     sndr,
-                } => sndr.send(event_generator.request_notes(until_duration))?,
+                } => {
+                    let _ = sndr.send(event_generator.request_notes(until_duration));
+                }
 
                 Msg::Exit => break,
             }
         }
 
         debug!("Event generator thread exited");
-        Ok(())
     });
 
     let handle = EventGeneratorActorHandle { tx };
@@ -57,7 +67,7 @@ pub struct EventGeneratorActorHandle {
 }
 
 impl EventGeneratorActorHandle {
-    pub fn get_events(&self, until_duration: Duration) -> anyhow::Result<Vec<Event>> {
+    pub fn get_events(&self, until_duration: Duration) -> anyhow::Result<RequestNotesResult> {
         let (tx, rx) = bounded(0);
 
         self.tx.send(Msg::GetEvents {

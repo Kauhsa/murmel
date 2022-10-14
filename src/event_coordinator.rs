@@ -1,9 +1,11 @@
 use crate::{
+    crossterm_raw_logger::LogErr,
     event::Event,
     event_generator_thread::{new_event_generator_actor, EventGeneratorActorHandle},
     player::PlayerEventSource,
 };
-use crossbeam::channel::{unbounded, Receiver, RecvError, Sender};
+use anyhow::anyhow;
+use crossbeam::channel::{bounded, unbounded, Receiver, RecvError, Sender};
 use log::{debug, warn};
 use std::{
     collections::VecDeque,
@@ -13,12 +15,15 @@ use std::{
     time::Duration,
 };
 
+const REQUEST_MORE_WHEN_COUNT_UNDER: usize = 100;
+const REQUEST_FOR_DURATION: Duration = Duration::from_secs(1);
+
 struct EventCoordinatorActor {
     entrypoint: PathBuf,
     rx: Receiver<Msg>,
     events: Arc<Mutex<VecDeque<Event>>>,
-    ega: EventGeneratorActorHandle,
-    ega_join_handles: Vec<JoinHandle<anyhow::Result<()>>>,
+    ega: Option<EventGeneratorActorHandle>,
+    ega_join_handles: Vec<JoinHandle<()>>,
 }
 
 #[derive(Debug)]
@@ -31,15 +36,28 @@ pub enum Msg {
 impl EventCoordinatorActor {
     pub fn new(entrypoint: PathBuf, rx: Receiver<Msg>) -> Self {
         let events = Arc::new(Mutex::new(VecDeque::<Event>::new()));
-        let (ega, ega_jh) = new_event_generator_actor(&entrypoint);
+        let mut ega_join_handles = vec![];
 
-        EventCoordinatorActor {
+        let ega = match Self::initialize_ega(&entrypoint) {
+            Ok((ega, ega_jh)) => {
+                ega_join_handles.push(ega_jh);
+                Some(ega)
+            }
+            Err(e) => {
+                warn!("Could not initialize ega: {:?}", e);
+                None
+            }
+        };
+
+        let ega = EventCoordinatorActor {
             rx,
             events,
             ega,
             entrypoint,
-            ega_join_handles: vec![ega_jh],
-        }
+            ega_join_handles,
+        };
+
+        ega.load_more_events(REQUEST_FOR_DURATION)
     }
 
     pub fn run(mut self) -> anyhow::Result<()> {
@@ -50,11 +68,11 @@ impl EventCoordinatorActor {
 
             match e {
                 Ok(Msg::LoadMoreEvents { until_duration }) => {
-                    self.load_more_events(until_duration)?
+                    self = self.load_more_events(until_duration);
                 }
 
                 Ok(Msg::ReloadFromNextMarker) => {
-                    self = self.reload_from_next_marker()?;
+                    self = self.reload_from_next_marker();
                 }
 
                 Ok(Msg::Exit) => break,
@@ -67,19 +85,30 @@ impl EventCoordinatorActor {
         }
 
         // send exit signal to current event generator, otherwise we won't ever
-        // be able to join
-        self.ega.exit()?;
+        // be able to join it
+        match self.ega {
+            Some(ega) => ega.exit().unwrap(),
+            None => (),
+        };
 
         for jh in self.ega_join_handles {
-            jh.join().unwrap()?;
+            jh.join().unwrap();
         }
 
         Ok(())
     }
 
-    fn reload_from_next_marker(mut self) -> Result<Self, anyhow::Error> {
-        let (new_ega, new_ega_jh) = new_event_generator_actor(&self.entrypoint);
-        self.ega_join_handles.push(new_ega_jh);
+    fn reload_from_next_marker(mut self) -> Self {
+        let new_ega = match Self::initialize_ega(&self.entrypoint) {
+            Ok((ega, ega_jh)) => {
+                self.ega_join_handles.push(ega_jh);
+                ega
+            }
+            Err(e) => {
+                warn!("Could not initialize new event generator: {:?}", e);
+                return self;
+            }
+        };
 
         {
             let mut evs = self.events.lock().unwrap();
@@ -89,32 +118,68 @@ impl EventCoordinatorActor {
                 Some(i) => evs.truncate(i),
 
                 // if there is no marker, we should queue events until we do.
-                None => todo!(),
+                None => {
+                    warn!("No marker found, clearing all events");
+                    evs.clear()
+                }
             }
         }
 
         {
             let old_ega = self.ega;
-            self.ega = new_ega;
+            self.ega = Some(new_ega);
+
+            match old_ega {
+                Some(ega) => ega.exit().log_err(),
+                None => (),
+            }
 
             // TODO: old_ega is probably going to get
             // dropped here. slow if dropping v8 instance
             // is slow?
-            old_ega.exit()?;
         }
 
-        Ok(self)
+        // get immediately some new events to the system!
+        self.load_more_events(REQUEST_FOR_DURATION)
     }
 
-    pub fn load_more_events(&self, until_duration: Duration) -> anyhow::Result<()> {
-        let new_events = self.ega.get_events(until_duration)?;
-        let mut events = self.events.lock().unwrap();
+    fn load_more_events(self, until_duration: Duration) -> Self {
+        match &self.ega {
+            Some(ega) => {
+                match ega.get_events(until_duration) {
+                    Ok(res) => {
+                        let mut events = self.events.lock().unwrap();
 
-        for event in new_events {
-            events.push_back(event);
+                        for event in res.events {
+                            events.push_back(event);
+                        }
+                    }
+
+                    Err(e) => {
+                        warn!("Error while retrieving more events: {:?}", e)
+                    }
+                };
+            }
+
+            None => {
+                warn!("No event generator initialized, cannot load events");
+            }
         }
 
-        Ok(())
+        self
+    }
+
+    fn initialize_ega(
+        entrypoint: &Path,
+    ) -> anyhow::Result<(EventGeneratorActorHandle, JoinHandle<()>)> {
+        let (initialized_tx, initialized_rx) = bounded(0);
+        let (ega, ega_jh) = new_event_generator_actor(entrypoint, initialized_tx);
+
+        match initialized_rx.recv() {
+            Ok(Ok(())) => Ok((ega, ega_jh)),
+            Ok(Err(e)) => Err(e),
+            Err(e) => Err(anyhow!("Could not initialize ega {:?}", e)),
+        }
     }
 }
 
@@ -159,9 +224,6 @@ impl EventCoordinatorActorHandle {
         Ok(())
     }
 }
-
-const REQUEST_MORE_WHEN_COUNT_UNDER: usize = 100;
-const REQUEST_FOR_DURATION: Duration = Duration::from_secs(1);
 
 impl PlayerEventSource for EventCoordinatorActorHandle {
     fn next(&self) -> Option<Event> {

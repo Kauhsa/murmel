@@ -70,6 +70,14 @@ fn run() -> anyhow::Result<()> {
                     event_coordinator.reload_from_next_marker()?;
                 }
 
+                KeyCode::Char('p') => {
+                    player.play()?;
+                }
+
+                KeyCode::Char('s') => {
+                    player.stop()?;
+                }
+
                 _ => (),
             },
             _ => (),

@@ -20,6 +20,11 @@ pub struct EventGenerator {
     module_id: ModuleId,
 }
 
+pub struct RequestNotesResult {
+    pub events: Vec<Event>,
+    pub has_more: bool,
+}
+
 impl EventGenerator {
     pub fn create(entrypoint: &Path) -> anyhow::Result<EventGenerator> {
         let async_runtime = Runtime::new().unwrap();
@@ -47,7 +52,10 @@ impl EventGenerator {
         })
     }
 
-    pub fn request_notes(&mut self, until_duration: Duration) -> Result<Vec<Event>, anyhow::Error> {
+    pub fn request_notes(
+        &mut self,
+        until_duration: Duration,
+    ) -> Result<RequestNotesResult, anyhow::Error> {
         let module = self.js_runtime.get_module_namespace(self.module_id)?;
         let isolate = self.js_runtime.v8_isolate();
         let val = module.open(isolate);
@@ -59,13 +67,14 @@ impl EventGenerator {
         let mut dur = Duration::ZERO;
 
         let mut events = vec![];
+        let mut has_more = true;
 
         while dur < until_duration {
             let EventGeneratorResult { done, value } =
                 call_generator_function(scope, default_export)?;
 
             if done {
-                debug!("Iterable is empty");
+                has_more = false;
                 break;
             }
 
@@ -83,7 +92,7 @@ impl EventGenerator {
             }
         }
 
-        Ok(events)
+        Ok(RequestNotesResult { events, has_more })
     }
 }
 

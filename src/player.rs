@@ -9,7 +9,14 @@ use std::{
 use thread_priority::{set_current_thread_priority, ThreadPriority, ThreadPriorityValue};
 
 pub enum Msg {
+    Play,
+    Stop,
     Exit,
+}
+
+pub enum PlayerStatus {
+    Stopped,
+    Playing,
 }
 
 pub struct PlayerActor<T: PlayerEventSource> {
@@ -20,6 +27,7 @@ pub struct PlayerActor<T: PlayerEventSource> {
     // internal player state
     first_event_instant: Option<Instant>,
     should_have_elapsed: Duration,
+    player_status: PlayerStatus,
 }
 
 impl<T: PlayerEventSource> PlayerActor<T> {
@@ -35,6 +43,7 @@ impl<T: PlayerEventSource> PlayerActor<T> {
 
             first_event_instant: None,
             should_have_elapsed: Duration::ZERO,
+            player_status: PlayerStatus::Stopped,
         }
     }
 
@@ -42,17 +51,36 @@ impl<T: PlayerEventSource> PlayerActor<T> {
         loop {
             match self.rx.try_recv() {
                 Ok(Msg::Exit) => break,
+
+                Ok(Msg::Play) => {
+                    info!("Starting playing");
+                    self.player_status = PlayerStatus::Playing;
+                }
+
+                Ok(Msg::Stop) => {
+                    info!("Stopping playing");
+                    self.first_event_instant = None;
+                    self.should_have_elapsed = Duration::ZERO;
+                    self.player_status = PlayerStatus::Stopped;
+                }
+
                 Err(TryRecvError::Empty) => (),
+
                 Err(TryRecvError::Disconnected) => {
                     return Err(anyhow::anyhow!("UI receiver disconnected"))
                 }
             }
 
-            match self.player_event_source.next() {
-                Some(event) => self.process_new_event(event)?,
-                None => {
-                    warn!("No event available to process yet, wait a bit...");
-                    spin_sleep::sleep(Duration::from_millis(100));
+            if matches!(&self.player_status, PlayerStatus::Playing) {
+                match self.player_event_source.next() {
+                    Some(event) => self.process_new_event(event)?,
+
+                    None => {
+                        // TODO: we should wait for a while and see if one
+                        // comes. Event generator might just be slow.
+                        warn!("No next event available. Stopping.");
+                        self.player_status = PlayerStatus::Stopped
+                    }
                 }
             }
         }
@@ -139,6 +167,16 @@ pub struct PlayerActorHandle {
 }
 
 impl PlayerActorHandle {
+    pub fn play(&self) -> anyhow::Result<()> {
+        self.tx.send(Msg::Play)?;
+        Ok(())
+    }
+
+    pub fn stop(&self) -> anyhow::Result<()> {
+        self.tx.send(Msg::Stop)?;
+        Ok(())
+    }
+
     pub fn exit(&self) -> anyhow::Result<()> {
         self.tx.send(Msg::Exit)?;
         Ok(())
