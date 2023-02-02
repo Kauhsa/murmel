@@ -18,5 +18,9 @@ export type Event =
           type: 'ChangeBpm'
           bpm: number
       }
+    | {
+          type: 'Print'
+          value: string
+      }
 
 export const TICKS_PER_BEAT = 55440

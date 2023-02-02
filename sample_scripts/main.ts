@@ -1,24 +1,36 @@
-import { TICKS_PER_BEAT, Event } from './murmel-std'
-import { Note } from './tonal/tonal.js'
+import { Event, TICKS_PER_BEAT } from './murmel-std'
+import { Note, Scale, Chord } from './tonal/tonal.mjs'
 
-const note = function* (note: number, beats: number): Generator<Event> {
+const note = function* (note: number, ticks: number): Generator<Event> {
     yield { type: 'NoteOn', note }
-    yield { type: 'Wait', ticks: beats * TICKS_PER_BEAT }
+    yield { type: 'Wait', ticks }
     yield { type: 'NoteOff', note }
 }
 
 const generator = function* (): Generator<Event> {
-    let base = Note.midi('C1')!
-    let bpm = 120
+    let chromatic = Scale.get('C4 chromatic').notes
+    let i = 0
+
+    yield { type: 'ChangeBpm', bpm: 140 }
 
     while (true) {
         yield { type: 'Marker' }
-        yield { type: 'ChangeBpm', bpm }
-        yield* note(base, 0.25)
-        yield* note(base, 0.25)
-        yield* note(base, 0.25)
-        yield* note(base, 0.25)
-        bpm++
+        yield { type: 'Print', value: 'New iteration!' }
+
+        for (let a = 0; a < 12; a++) {
+            let current = chromatic[i % chromatic.length]
+            let chord = Chord.getChord('minor', current)
+
+            yield { type: 'Print', value: chord.symbol }
+
+            for (let i = 0; i < 4; i++) {
+                for (const n of chord.notes) {
+                    yield* note(Note.midi(n)!, TICKS_PER_BEAT / 4)
+                }
+            }
+
+            i += 5 // advance in fifths
+        }
     }
 }
 
